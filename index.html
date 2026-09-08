@@ -428,20 +428,20 @@ function clsSign(v){ if(v==null) return ''; return v>0?'pos':(v<0?'neg':''); }
 
 function plHeaderRows(){
   const LI = DATA.last_actual_idx;
-  const mYoY = mlbl(DATA.months[LI-12]), mPrev = mlbl(DATA.months[LI-1]), mCur = mlbl(DATA.months[LI]);
+  const mPrev = mlbl(DATA.months[LI-1]), mCur = mlbl(DATA.months[LI]);
   return `<thead class="grp"><tr>
     <th class="firstcol"></th>
-    <th colspan="4">Actuals</th>
+    <th colspan="3">Actuals</th>
     <th colspan="2">Budget</th>
-    <th colspan="4">Deviation ($)</th>
-    <th colspan="4">Deviation (%)</th>
+    <th colspan="3">Deviation ($)</th>
+    <th colspan="3">Deviation (%)</th>
   </tr></thead>
   <thead class="sub"><tr>
     <th class="firstcol"></th>
-    <th>${mYoY}</th><th>${mPrev}</th><th class="cur">${mCur}</th><th class="cur gend">YTD</th>
+    <th>${mPrev}</th><th class="cur">${mCur}</th><th class="cur gend">YTD</th>
     <th class="cur">${mCur}</th><th class="cur gend">YTD</th>
-    <th>vs ${mPrev}</th><th>vs Budget</th><th>vs ${mYoY}</th><th class="gend">vs Budget YTD</th>
-    <th>vs ${mPrev}</th><th>vs Budget</th><th>vs ${mYoY}</th><th class="gend">vs Budget YTD</th>
+    <th>vs ${mPrev}</th><th>vs Budget</th><th class="gend">vs Budget YTD</th>
+    <th>vs ${mPrev}</th><th>vs Budget</th><th class="gend">vs Budget YTD</th>
   </tr></thead>`;
 }
 
@@ -449,24 +449,23 @@ function rowLineInner(label, key, trClass){
   const s = DATA.consolidated_pl[key];
   const LI = DATA.last_actual_idx;
   const a = s.actual, b = s.budget;
-  const yoy = LI>=12?a[LI-12]:null, prev = LI>=1?a[LI-1]:null, cur = a[LI];
+  const prev = LI>=1?a[LI-1]:null, cur = a[LI];
   const ytd = sumRange(a, YTD_START, LI);
   const budCur = b ? b[LI] : null;
   const budYtd = b ? sumRange(b, YTD_START, LI) : null;
 
   const devMomD = (cur!=null&&prev!=null)?cur-prev:null;
   const devBudD = (cur!=null&&budCur!=null)?cur-budCur:null;
-  const devYoyD = (cur!=null&&yoy!=null)?cur-yoy:null;
   const devYtdD = (ytd!=null&&budYtd!=null)?ytd-budYtd:null;
-  const devMomP = pctDelta(cur,prev), devBudP = pctDelta(cur,budCur), devYoyP = pctDelta(cur,yoy), devYtdP = pctDelta(ytd,budYtd);
+  const devMomP = pctDelta(cur,prev), devBudP = pctDelta(cur,budCur), devYtdP = pctDelta(ytd,budYtd);
 
   const trc = trClass ? ` class="${trClass}"` : '';
   return `<tr${trc}>
     <td class="lbl">${label}</td>
-    <td>${fmtMoney(yoy)}</td><td>${fmtMoney(prev)}</td><td class="cur">${fmtMoney(cur)}</td><td class="cur gend">${fmtMoney(ytd)}</td>
+    <td>${fmtMoney(prev)}</td><td class="cur">${fmtMoney(cur)}</td><td class="cur gend">${fmtMoney(ytd)}</td>
     <td class="cur">${fmtMoney(budCur)}</td><td class="cur gend">${fmtMoney(budYtd)}</td>
-    <td class="${clsSign(devMomD)}">${fmtMoney(devMomD)}</td><td class="${clsSign(devBudD)}">${fmtMoney(devBudD)}</td><td class="${clsSign(devYoyD)}">${fmtMoney(devYoyD)}</td><td class="gend ${clsSign(devYtdD)}">${fmtMoney(devYtdD)}</td>
-    <td class="${clsSign(devMomP)}">${fmtDevPct(devMomP)}</td><td class="${clsSign(devBudP)}">${fmtDevPct(devBudP)}</td><td class="${clsSign(devYoyP)}">${fmtDevPct(devYoyP)}</td><td class="gend ${clsSign(devYtdP)}">${fmtDevPct(devYtdP)}</td>
+    <td class="${clsSign(devMomD)}">${fmtMoney(devMomD)}</td><td class="${clsSign(devBudD)}">${fmtMoney(devBudD)}</td><td class="gend ${clsSign(devYtdD)}">${fmtMoney(devYtdD)}</td>
+    <td class="${clsSign(devMomP)}">${fmtDevPct(devMomP)}</td><td class="${clsSign(devBudP)}">${fmtDevPct(devBudP)}</td><td class="gend ${clsSign(devYtdP)}">${fmtDevPct(devYtdP)}</td>
   </tr>`;
 }
 function rowLine(label,key){ return rowLineInner(label,key,''); }
@@ -477,7 +476,6 @@ function rowMargin(label, numKey, denKey){
   const LI = DATA.last_actual_idx;
   const a_n=num.actual, a_d=den.actual, b_n=num.budget, b_d=den.budget;
   const mk=(n,d)=> (n!=null&&d!=null&&d!==0) ? (n/d*100) : null;
-  const yoy = LI>=12?mk(a_n[LI-12],a_d[LI-12]):null;
   const prev = LI>=1?mk(a_n[LI-1],a_d[LI-1]):null;
   const cur = mk(a_n[LI],a_d[LI]);
   const ytdN = sumRange(a_n,YTD_START,LI), ytdD = sumRange(a_d,YTD_START,LI);
@@ -488,10 +486,10 @@ function rowMargin(label, numKey, denKey){
   const fp=(v)=> v==null ? '—' : v.toFixed(1)+'%';
   return `<tr>
     <td class="lbl italic">${label}</td>
-    <td class="italic">${fp(yoy)}</td><td class="italic">${fp(prev)}</td><td class="cur italic">${fp(cur)}</td><td class="cur gend italic">${fp(ytd)}</td>
+    <td class="italic">${fp(prev)}</td><td class="cur italic">${fp(cur)}</td><td class="cur gend italic">${fp(ytd)}</td>
     <td class="cur italic">${fp(budCur)}</td><td class="cur gend italic">${fp(budYtd)}</td>
-    <td class="italic">—</td><td class="italic">—</td><td class="italic">—</td><td class="gend italic">—</td>
-    <td class="italic">—</td><td class="italic">—</td><td class="italic">—</td><td class="gend italic">—</td>
+    <td class="italic">—</td><td class="italic">—</td><td class="gend italic">—</td>
+    <td class="italic">—</td><td class="italic">—</td><td class="gend italic">—</td>
   </tr>`;
 }
 

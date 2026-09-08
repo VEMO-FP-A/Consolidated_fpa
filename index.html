@@ -15,14 +15,27 @@
   --tx:#222;--tx2:#555;--tx3:#888;--rs:6px;--r:10px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Space Grotesk',sans-serif;background:var(--bg);color:var(--tx);line-height:1.4}
+body{font-family:'Space Grotesk',sans-serif;background:var(--bg);color:var(--tx);line-height:1.4;padding-left:34px;position:relative}
 body.dark-mode{--bg:#1a1f23;--sf:#22282d;--b:#353c42;--tx:#e6ebee;--tx2:#d4dae0;--tx3:#9aa3ac;--forest:#7BDADA;color:#e6ebee!important}
 body.dark-mode *{color:inherit}
 .wrap{max-width:1400px;margin:0 auto;padding:28px 24px 60px}
-.topbar{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:28px}
-.title{font-size:28px;font-weight:700;color:var(--forest)}
-.subtitle{font-size:13px;color:var(--tx2);margin-top:4px}
+
+/* left/bottom confidentiality ribbons -- ported verbatim from the individual dashboards */
+.ribbon{position:fixed;left:0;top:0;bottom:0;width:28px;background:var(--teal);display:flex;align-items:flex-start;justify-content:center;padding-top:80px;z-index:5}
+.ribbon span{writing-mode:vertical-rl;transform:rotate(180deg);color:#fff;font-size:9px;letter-spacing:0.18em;font-weight:600;text-transform:uppercase}
+.ribbon-bot{position:fixed;left:0;bottom:0;width:28px;height:120px;background:var(--teal);display:flex;align-items:flex-end;justify-content:center;padding-bottom:16px;z-index:5}
+.ribbon-bot span{writing-mode:vertical-rl;transform:rotate(180deg);color:#fff;font-size:8px;letter-spacing:0.18em;font-weight:600;text-transform:uppercase}
+
+.topbar{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:28px}
+.title{font-size:28px;font-weight:700;color:var(--forest);letter-spacing:-0.01em;line-height:1.05}
+.title b{color:var(--teal);font-weight:800}
+.subtitle{color:var(--tx2);font-size:11px;letter-spacing:0.06em;text-transform:uppercase;margin-top:4px}
+.brand{display:flex;align-items:center;gap:14px}
+.brand .vemo-logo-wrap{background:#fff;padding:8px 18px;border-radius:8px;display:flex;align-items:center;gap:8px;font-family:'Space Grotesk',sans-serif;font-weight:900;font-size:22px;letter-spacing:-0.01em;border:1px solid #e8eaed;box-shadow:0 2px 6px rgba(0,0,0,0.04)}
+.brand .vemo-logo-vemo{background:linear-gradient(135deg,#0F5454 0%,#1F5454 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;font-weight:900;letter-spacing:-0.02em}
 .iconbtn{width:34px;height:34px;border-radius:999px;border:1px solid var(--b);background:var(--sf);color:var(--tx2);cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center}
+body.dark-mode .ribbon,body.dark-mode .ribbon-bot{background:var(--teal-deep)}
+body.dark-mode .brand .vemo-logo-wrap{background:#22282d;border-color:#353c42}
 
 .company-block{background:var(--sf);border:1px solid var(--b);border-radius:14px;padding:22px 24px;margin-bottom:22px}
 .company-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:18px}
@@ -105,13 +118,16 @@ footer{text-align:center;font-size:11px;color:var(--tx3);margin-top:40px}
 </style>
 </head>
 <body>
+<div class="ribbon"><span>VEMO Monthly Financial Review</span></div>
+<div class="ribbon-bot"><span>Strictly Private &amp; Confidential</span></div>
 <div class="wrap">
   <div class="topbar">
     <div>
-      <div class="title">VEMO — Consolidated Executive Summary</div>
-      <div class="subtitle" id="subtitleText">DAE · VEMO Impulso · EV Fleets · VCN — updated through July 2026</div>
+      <div class="title">VEMO — <b>Consolidated Executive Summary</b></div>
+      <div class="subtitle">VCN · VEMO Impulso · DAE · EV Fleets · Financial &amp; Operational · <span id="data-through-label" style="color:var(--teal);font-weight:700"></span></div>
     </div>
-    <div class="topctrls">
+    <div class="brand">
+      <div class="vemo-logo-wrap"><span class="vemo-logo-vemo">VEMO</span></div>
       <button class="iconbtn" id="darkToggle" title="Dark mode">🌙</button>
     </div>
   </div>
@@ -512,8 +528,8 @@ function computeYtdStart(){
 
 document.addEventListener('DOMContentLoaded', ()=>{
   YTD_START = computeYtdStart();
-  document.getElementById('subtitleText').textContent =
-    `VCN · VEMO Impulso · DAE · EV Fleets — updated through ${DATA.generated_month_label}`;
+  document.getElementById('data-through-label').textContent =
+    `📅 Data through ${DATA.generated_month_label}`;
 
   document.getElementById('companies').innerHTML =
     Object.keys(DATA.companies).map(renderCompanyBlock).join('');

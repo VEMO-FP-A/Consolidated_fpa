@@ -278,6 +278,21 @@ def add_arrays(*arrs):
     return out
 
 
+def strip_leading_zeros(arr):
+    """Un tramo inicial de ceros (antes del primer valor real) se trata como
+    'todavia sin informacion' (None), no como actividad cero -- varios KPIs
+    operativos empiezan a reportarse a mitad de periodo y el dashboard fuente
+    deja esos meses en 0 en vez de null, lo que graficaba una linea plana en
+    $0 en el KPI Trend / sparkline en lugar de no graficar nada."""
+    out = list(arr)
+    for i in range(len(out)):
+        if out[i] == 0:
+            out[i] = None
+        elif out[i] is not None:
+            break
+    return out
+
+
 def arr_cand(d, keys):
     for k in keys:
         a = d.get(k)
@@ -303,13 +318,13 @@ def resolve_kpi(d, ki, n):
     como hacen los dashboards originales."""
     ak, _ = arr_cand(d, ki['keys'])
     bk, _ = barr_cand(d, ki['keys'])
-    base = full(d, ak, n)
+    base = strip_leading_zeros(full(d, ak, n))
     spark = list(base)
     data = list(base)
     if 'add' in ki:
         a2k, _ = arr_cand(d, ki['add'])
         if a2k:
-            add_full = full(d, a2k, n)
+            add_full = strip_leading_zeros(full(d, a2k, n))
             data = [
                 (x + y) if (x is not None and y is not None) else (x if x is not None else y)
                 for x, y in zip(data, add_full)

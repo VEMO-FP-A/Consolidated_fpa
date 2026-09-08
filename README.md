@@ -16,16 +16,22 @@ negocio (DAE, VEMO Impulso/LTO, EV Fleets, VCN).
 
 Para cada empresa:
 - Logo y nombre.
-- Mini KPI cards con las métricas principales (Revenue, EBITDA, EBITDA Margin, Utilidad Neta
-  para DAE/EV Fleets/VCN; Ingreso Operativo Neto, Utilidad Neta, Cartera Neta y ROE para VEMO
-  Impulso, que es un negocio financiero de leasing y no reporta EBITDA de forma nativa).
-- Toggle YTD 2026 / Mes actual, con variación vs. presupuesto.
-- Gráfico mensual (Revenue/Ingreso vs. EBITDA/Utilidad Neta), Ene-2025 a la fecha.
+- Las tarjetas KPI **reales** de su propio Executive Summary nativo (las mismas que en su
+  dashboard individual — operativas/comerciales, no financieras genéricas): p.ej. Performance
+  Ratio/Supply Hours/Utilization/Trips/Fleet/OOS para DAE; EPC Sales/Backlog/Pipeline/ZEE
+  vehicles para EV Fleets; Installed Capacity/Connectors/Utilization/Revenue per kWh para VCN;
+  Gross Portfolio/Active Fleet/Originación/Default Rate para VEMO Impulso.
+- **KPI Trend** — un gráfico de línea por empresa, con selector desplegable para elegir cuál de
+  sus KPIs graficar, checkbox de Presupuesto (línea punteada) y Run-Rate (proyección a 3 meses).
 - Botón directo al dashboard completo de esa empresa.
 
-Al final, una sección de **P&L Consolidado — Conciliación** con la suma agregada de las 4
-empresas línea por línea (Revenue, Opex, Utilidad Bruta, SG&A, EBITDA, D&A, EBIT, Gastos
-Financieros, EBT, Impuestos, Utilidad Neta).
+Al final, una sección de **P&L Consolidado** con la suma agregada de las 4 empresas, en el mismo
+formato de tabla que usan los P&L de los dashboards individuales (Actuals / Budget / Deviation $ /
+Deviation %), con las líneas: Revenues (net of interco), COGS + Opex, Normalized Gross Profit,
+Gross Margin, SG&A, Normalized EBITDA, EBITDA Margin, D&A, EBIT, Net Interest, EBT, Taxes,
+Normalized Net Income, Net Margin. VEMO Impulso (negocio financiero de leasing) reconstruye su
+EBITDA/EBIT de forma sintética (EBT + Gastos Financieros [+ D&A]) para poder sumarse en la misma
+línea que los demás negocios operativos.
 
 ## Cómo actualizar
 

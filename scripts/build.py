@@ -8,6 +8,10 @@ extrae su objeto `const D` embebido, arma consolidated_data.json, y genera
 index.html -- un solo archivo autocontenido (CSS + JS + datos incrustados,
 nada que abrir aparte).
 
+Las tarjetas KPI de cada empresa, el grafico "KPI Trend" y las lineas del P&L
+Consolidado replican exactamente el formato de los 4 dashboards individuales
+(ver KPI_DEFS abajo -- son los mismos KPI13 de cada Executive Summary nativo).
+
 Correr despues de que los 4 dashboards individuales ya tengan el mes nuevo.
 """
 import json, os, base64, urllib.request
@@ -22,8 +26,6 @@ SOURCES = {
     'VCN_BoardD': 'https://raw.githubusercontent.com/VEMO-FP-A/VCN_BoardD/main/index.html',
     'EV_BoardD':  'https://raw.githubusercontent.com/VEMO-FP-A/EV_BoardD/main/index.html',
 }
-
-PERIODS = ['latest', 'ytd', 'py_full', 'budget_ytd', 'budget_latest']
 
 
 # ---------- 1) extraer el objeto `const D = {...}` embebido en un dashboard ----------
@@ -83,229 +85,233 @@ def download_sources():
         fetch(name, url)
 
 
-# ---------- 3) armar consolidated_data.json a partir de los 4 `D` extraidos ----------
+# ---------- 3) KPI13 reales de cada dashboard (Executive Summary nativo) ----------
+# Ported verbatim from each live dashboard's own `const KPI13=[...]` array -- estas
+# SON las metricas principales de cada negocio (operativas/comerciales), NO metricas
+# financieras genericas -- las financieras viven solo en el P&L Consolidado de abajo.
+KPI_DEFS = {
+    'dae': [
+        {'l': 'Performance Ratio', 'keys': ['performance_ratio'], 'unit': '%', 'type': 'pct', 'better': 'up'},
+        {'l': 'Performance Ratio Exc. LTO', 'keys': ['performance_ratio_exc_lto'], 'unit': '%', 'type': 'pct', 'better': 'up'},
+        {'l': 'Supply Hours', 'keys': ['supply_hours', 'time_online'], 'unit': 'Hrs', 'type': 'num', 'fmt': 'int', 'better': 'up'},
+        {'l': 'Revenue Per Hour (RPH)', 'keys': ['revenue_per_hour', 'rev_per_hour_vemo'], 'unit': 'MXN$', 'type': 'num', 'fmt': 'n1', 'better': 'up'},
+        {'l': 'Utilization', 'keys': ['utilization'], 'unit': '%', 'type': 'pct', 'better': 'up'},
+        {'l': 'Trips', 'keys': ['trips_total', 'trips_completed'], 'unit': '#', 'type': 'num', 'fmt': 'k', 'better': 'up'},
+        {'l': 'Active Drivers (EoP)', 'keys': ['eop_active_drivers', 'active_drivers'], 'unit': '#', 'type': 'num', 'fmt': 'int', 'better': 'up'},
+        {'l': 'Driver Fill Rate (EoP)', 'keys': ['fill_rate_eop', 'fill_rate_avg'], 'unit': '%', 'type': 'pct', 'better': 'up'},
+        {'l': 'Total Fleet', 'keys': ['total_fleet'], 'unit': '#', 'type': 'num', 'fmt': 'int', 'better': 'up'},
+        {'l': 'Active Fleet', 'keys': ['operational_vehicles'], 'unit': '#', 'type': 'num', 'fmt': 'int', 'better': 'up'},
+        {'l': 'OOS', 'keys': ['oos_pct', 'oos', 'inactivity_rate'], 'unit': '%', 'type': 'pct', 'better': 'down'},
+        {'l': 'Maintenance per km', 'keys': ['maintenance_per_km'], 'unit': 'MXN$/km', 'type': 'num', 'fmt': 'n2', 'better': 'down'},
+        {'l': 'Total Incidents', 'keys': ['inc_atfault_total'], 'unit': '#', 'type': 'num', 'fmt': 'int', 'better': 'down', 'add': ['inc_notfault_total']},
+        {'l': 'Hires per DAE recruiter', 'keys': ['hires_per_recruiter'], 'unit': '#', 'type': 'num', 'fmt': 'int', 'better': 'up'},
+    ],
+    'ev': [
+        {'l': 'EPC Sales (Third Party)', 'keys': ['epc_sales_3p'], 'unit': 'MXN$m', 'type': 'money', 'fmt': 'mm', 'better': 'up'},
+        {'l': 'EPC Backlog', 'keys': ['epc_backlog'], 'unit': 'MXN$m', 'type': 'money', 'fmt': 'mm', 'better': 'up'},
+        {'l': 'EPC Pipeline', 'keys': ['epc_pipeline'], 'unit': 'MXN$m', 'type': 'money', 'fmt': 'mm', 'better': 'up'},
+        {'l': 'ZEE Monitored LTO Vehicles', 'keys': ['zee_monitored_lto'], 'unit': '#', 'type': 'num', 'fmt': 'int', 'better': 'up'},
+        {'l': 'ZEE Monitored Third-Party Vehicles', 'keys': ['zee_monitored_3p'], 'unit': '#', 'type': 'num', 'fmt': 'int', 'better': 'up'},
+        {'l': 'ZEE Total Monitored Vehicles', 'keys': ['zee_total_monitored'], 'unit': '#', 'type': 'num', 'fmt': 'int', 'better': 'up'},
+    ],
+    'vcn': [
+        {'l': 'Network Installed Capacity', 'keys': ['installed_capacity_mw'], 'unit': 'MW', 'type': 'num', 'fmt': 'n1', 'better': 'up'},
+        {'l': 'Network Active Connectors', 'keys': ['total_connectors'], 'unit': '#', 'type': 'num', 'fmt': 'int', 'better': 'up'},
+        {'l': 'Network Underwritten IRR', 'keys': ['underwritten_irr'], 'unit': '%', 'type': 'pct', 'better': 'up'},
+        {'l': 'Throughput', 'keys': ['sessions_total'], 'unit': 'MWh', 'type': 'num', 'fmt': 'k', 'better': 'up'},
+        {'l': 'Network Throughput Utilization', 'keys': ['utilization'], 'unit': '%', 'type': 'pct', 'better': 'up'},
+        {'l': 'Daily Throughput per Connector', 'keys': ['throughput_per_connector'], 'unit': 'kWh/connector/day', 'type': 'num', 'fmt': 'n0', 'better': 'up'},
+        {'l': 'Avg. Revenue per kWh', 'keys': ['rev_per_kwh'], 'unit': 'MXN$/kWh', 'type': 'num', 'fmt': 'n1', 'better': 'up'},
+        {'l': 'Daily Revenue per Connector', 'keys': ['revenue_per_connector'], 'unit': 'MXN$/conn/day', 'type': 'num', 'fmt': 'n0', 'better': 'up'},
+        {'l': 'Energy Margin per kWh', 'keys': ['energy_margin_kwh'], 'unit': '%', 'type': 'pct', 'better': 'up'},
+        {'l': 'Gross Profit Margin per kWh', 'keys': ['gross_margin_kwh'], 'unit': '%', 'type': 'pct', 'better': 'up'},
+        {'l': 'Technical Uptime', 'keys': ['uptime_pct'], 'unit': '%', 'type': 'pct', 'better': 'up'},
+    ],
+    'lto': [
+        {'l': 'Gross Portfolio (exc. WK &amp; Other loans)', 'keys': ['vrpm_gross_portfolio_total'], 'unit': 'MXNm', 'type': 'num', 'fmt': 'mm', 'better': 'up'},
+        {'l': 'Portfolio Active Fleet', 'keys': ['vrpm_active_fleet_total'], 'unit': '#', 'type': 'num', 'fmt': 'int', 'better': 'up'},
+        {'l': 'Origination of New Vehicles (#)', 'keys': ['vrpm_orig_new_total'], 'unit': '#', 'type': 'num', 'fmt': 'int', 'better': 'up'},
+        {'l': 'Origination of Used Vehicles (#)', 'keys': ['orig_used_total'], 'unit': '#', 'type': 'num', 'fmt': 'int', 'better': 'up'},
+        {'l': 'Portfolio Asset Yield (YTD)', 'keys': ['vrpm_asset_yield'], 'unit': '%', 'type': 'pct', 'better': 'up'},
+        {'l': 'Effective Repossessions', 'keys': ['vrpm_repo_total'], 'unit': '#', 'type': 'num', 'fmt': 'int', 'better': 'down'},
+        {'l': 'Repossessions (% Total Fleet)', 'keys': ['vrpm_repo_pct'], 'unit': '%', 'type': 'pct', 'better': 'down'},
+        {'l': 'Used Vehicle Inventory', 'keys': ['vrpm_uvi_total'], 'unit': '#', 'type': 'num', 'fmt': 'int', 'better': 'down'},
+        {'l': 'Used Vehicle Inventory (% Total Fleet)', 'keys': ['vrpm_uvi_pct'], 'unit': '%', 'type': 'pct', 'better': 'down'},
+        {'l': 'Portfolio Default Rate', 'keys': ['vrpm_default_rate'], 'unit': '%', 'type': 'pct', 'better': 'down'},
+    ],
+}
+
+
+COMPANIES_META = {
+    'dae': {'name': 'DAE', 'full': 'Driver as Employee', 'url': 'https://vemo-fp-a.github.io/DAE_BoardD/', 'file': 'DAE_BoardD'},
+    'ev':  {'name': 'EV Fleets', 'full': 'Electric Vehicle Fleets', 'url': 'https://vemo-fp-a.github.io/EV_BoardD/', 'file': 'EV_BoardD'},
+    'vcn': {'name': 'VCN', 'full': 'VEMO Charging Network', 'url': 'https://vemo-fp-a.github.io/VCN_BoardD/', 'file': 'VCN_BoardD'},
+    'lto': {'name': 'VEMO Impulso', 'full': 'Lease-to-Own', 'url': 'https://vemo-fp-a.github.io/LTO_BoardD/', 'file': 'LTO_BoardD'},
+}
+
+MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto',
+            'Septiembre','Octubre','Noviembre','Diciembre']
+
+PL_FIELDS = ['revenue', 'opex', 'gross_profit', 'sga_total', 'ebitda', 'da',
+             'ebit', 'interest_expense', 'ebt', 'taxes', 'net_income']
+
+
+def full(d, key, n):
+    if key is None:
+        return [None] * n
+    a = d.get(key)
+    if a is None:
+        return [None] * n
+    a = list(a)
+    if len(a) < n:
+        a = a + [None] * (n - len(a))
+    return [(round(x, 4) if isinstance(x, (int, float)) else None) for x in a[:n]]
+
+
+def add_arrays(*arrs):
+    n = len(arrs[0])
+    out = []
+    for i in range(n):
+        vals = [a[i] for a in arrs if a[i] is not None]
+        out.append(round(sum(vals), 4) if vals else None)
+    return out
+
+
+def arr_cand(d, keys):
+    for k in keys:
+        a = d.get(k)
+        if a and any(v is not None for v in a):
+            return k, a
+    return None, None
+
+
+def barr_cand(d, keys):
+    for k in keys:
+        for bk in ('budget_' + k, k + '_budget'):
+            a = d.get(bk)
+            if a and any((v is not None and v != 0) for v in a):
+                return bk, a
+    return None, None
+
+
+def resolve_kpi(d, ki, n):
+    """Resuelve un metric-spec de KPI_DEFS contra el `D` de una empresa: busca la
+    primera key candidata con datos reales (arr_cand), su budget si existe
+    (barr_cand), y si el spec trae 'add' (ej. DAE 'Total Incidents' = at-fault +
+    not-at-fault) lo suma SOLO al valor -- nunca al budget ni al sparkline, tal
+    como hacen los dashboards originales."""
+    ak, _ = arr_cand(d, ki['keys'])
+    bk, _ = barr_cand(d, ki['keys'])
+    base = full(d, ak, n)
+    spark = list(base)
+    data = list(base)
+    if 'add' in ki:
+        a2k, _ = arr_cand(d, ki['add'])
+        if a2k:
+            add_full = full(d, a2k, n)
+            data = [
+                (x + y) if (x is not None and y is not None) else (x if x is not None else y)
+                for x, y in zip(data, add_full)
+            ]
+    budget = full(d, bk, n) if bk else None
+    return {
+        'l': ki['l'], 'unit': ki['unit'], 'type': ki['type'],
+        'fmt': ki.get('fmt'), 'better': ki['better'],
+        'data': data, 'spark': spark, 'budget': budget,
+    }
+
+
+def pl_lines(d, key, n):
+    """Devuelve dict {field: (actual_arr, budget_arr)} -- series mensuales completas,
+    ya reconciliadas para que gross_profit == revenue+opex y ebitda == gross_profit+sga_total
+    en cada empresa (verificado contra los 4 dashboards fuente)."""
+    if key == 'lto':
+        # VEMO Impulso es un negocio financiero de leasing: no reporta EBITDA
+        # nativamente. Se reconstruye de forma sintetica y consistente:
+        # EBITDA = EBT + Gastos Financieros + D&A ; EBIT = EBT + Gastos Financieros.
+        rev = full(d, 'net_operating_revenue', n); brev = full(d, 'budget_net_operating_revenue', n)
+        opex = full(d, 'cogs_total', n); bopex = full(d, 'budget_cogs_total', n)
+        gp = add_arrays(rev, opex); bgp = add_arrays(brev, bopex)
+        sga = full(d, 'total_sga', n); bsga = full(d, 'budget_total_sga', n)
+        da = full(d, 'da_total', n); bda = full(d, 'budget_da_total', n)
+        ie = full(d, 'interest_expense', n); bie = full(d, 'budget_interest_expense', n)
+        ebt = full(d, 'ebt', n); bebt = full(d, 'budget_ebt', n)
+        taxes = full(d, 'taxes', n); btaxes = full(d, 'budget_taxes', n)
+        ni = full(d, 'net_income', n); bni = full(d, 'budget_net_income', n)
+        ebitda = add_arrays(ebt, ie, da); bebitda = add_arrays(bebt, bie, bda)
+        ebit = add_arrays(ebt, ie); bebit = add_arrays(bebt, bie)
+    else:
+        rev = full(d, 'revenue', n); brev = full(d, 'budget_revenue', n)
+        opex = full(d, 'opex', n); bopex = full(d, 'budget_opex', n)
+        gp = full(d, 'gross_profit', n); bgp = full(d, 'budget_gross_profit', n)
+        sga_key = 'sga' if key == 'ev' else 'sga_total'
+        sga = full(d, sga_key, n); bsga = full(d, 'budget_' + sga_key, n)
+        ebitda = full(d, 'ebitda', n); bebitda = full(d, 'budget_ebitda', n)
+        da = full(d, 'da', n); bda = full(d, 'budget_da', n)
+        ebit = full(d, 'ebit', n); bebit = full(d, 'budget_ebit', n)
+        ie = full(d, 'interest_expense', n); bie = full(d, 'budget_interest_expense', n)
+        ebt = full(d, 'ebt', n); bebt = full(d, 'budget_ebt', n)
+        taxes = full(d, 'taxes', n); btaxes = full(d, 'budget_taxes', n)
+        ni = full(d, 'net_income', n); bni = full(d, 'budget_net_income', n)
+        if key == 'vcn':
+            # VCN's gross_profit ya neta AMBOS cogs_total Y opex (revenue + cogs_total
+            # + opex == gross_profit, confirmado contra la fuente), asi que la linea
+            # "COGS + Opex" debe combinar ambos; y SG&A (que VCN no reporta como campo
+            # propio) es la brecha entre EBITDA y utilidad bruta.
+            cogs = full(d, 'cogs_total', n); bcogs = full(d, 'budget_cogs_total', n)
+            opex = add_arrays(cogs, opex); bopex = add_arrays(bcogs, bopex)
+            sga = [(e - g) if (e is not None and g is not None) else None for e, g in zip(ebitda, gp)]
+            bsga = [(e - g) if (e is not None and g is not None) else None for e, g in zip(bebitda, bgp)]
+    return {
+        'revenue': (rev, brev), 'opex': (opex, bopex), 'gross_profit': (gp, bgp),
+        'sga_total': (sga, bsga), 'ebitda': (ebitda, bebitda), 'da': (da, bda),
+        'ebit': (ebit, bebit), 'interest_expense': (ie, bie), 'ebt': (ebt, bebt),
+        'taxes': (taxes, btaxes), 'net_income': (ni, bni),
+    }
+
+
 def _build_companies():
+    dsets = {k: extract_D(os.path.join(CACHE, f"{v['file']}.html")) for k, v in COMPANIES_META.items()}
+    months = dsets['dae']['months']
+    n = len(months)
+    lai = dsets['dae']['last_actual_idx']
+
     companies = {}
-
-    def s(d, key, i0, i1):
-        arr = d.get(key)
-        if arr is None:
-            return None
-        return sum(arr[i0:i1+1])
-
-    def v(d, key, i):
-        arr = d.get(key)
-        if arr is None:
-            return None
-        return arr[i]
-
-    def series(d, key, i0, i1):
-        arr = d.get(key)
-        if arr is None:
-            return None
-        return [round(x, 1) for x in arr[i0:i1+1]]
-
-    def spark(d, field, budget_field, i0, i1):
-        """monthly actual+budget series for a KPI-card sparkline — full available
-        history (0..LAI), matching the source dashboards' KPI13 cards which use
-        spStart=0 (NOT just current-year YTD)"""
-        a = d.get(field)
-        b = d.get(budget_field)
-        actual = [round(x, 2) if x is not None else None for x in (a[i0:i1+1] if a else [None]*(i1-i0+1))]
-        budget = [round(x, 2) if x is not None else None for x in (b[i0:i1+1] if b else [None]*(i1-i0+1))]
-        return {'actual': actual, 'budget': budget}
-
-    def mk(d, lai, ytd0, fields, budget_prefix='budget_'):
-        out = {}
-        for f in fields:
-            out[f] = {
-                'latest': v(d, f, lai),
-                'ytd': s(d, f, ytd0, lai),
-                'py_full': s(d, f, 0, 11),
-                'budget_ytd': s(d, budget_prefix + f, ytd0, lai),
-                'budget_latest': v(d, budget_prefix + f, lai),
-            }
-        return out
-
-    # ---------- DAE ----------
-    d = extract_D(os.path.join(CACHE, 'DAE_BoardD.html'))
-    lai = d['last_actual_idx']
-    months = d['months']
-    dae_fields = ['revenue', 'opex', 'gross_profit', 'gross_margin', 'sga_total', 'ebitda', 'ebitda_margin',
-                  'da', 'ebit', 'interest_expense', 'ebt', 'taxes', 'net_income', 'ni_margin']
-    companies['dae'] = {
-        'key': 'dae', 'name': 'DAE', 'full_name': 'Driving As Employee', 'logo': 'dae',
-        'url': 'https://vemo-fp-a.github.io/DAE_BoardD/',
-        'accent': '#11ABAB',
-        'pl': mk(d, lai, 12, dae_fields),
-        'kpi_ops': {
-            'eop_active_drivers': v(d, 'eop_active_drivers', lai),
-            'trips_total_ytd': s(d, 'trips_total', 12, lai),
-            'total_fleet': v(d, 'total_fleet', lai),
-        },
-        'chart': {
-            'months': months[0:lai+1],
-            'revenue': series(d, 'revenue', 0, lai),
-            'ebitda': series(d, 'ebitda', 0, lai),
-        },
-        'kpi_charts': {
-            'revenue': spark(d, 'revenue', 'budget_revenue', 0, lai),
-            'ebitda': spark(d, 'ebitda', 'budget_ebitda', 0, lai),
-            'ebitda_margin': spark(d, 'ebitda_margin', 'budget_ebitda_margin', 0, lai),
-            'net_income': spark(d, 'net_income', 'budget_net_income', 0, lai),
-        }
-    }
-
-    # ---------- EV FLEETS ----------
-    d = extract_D(os.path.join(CACHE, 'EV_BoardD.html'))
-    lai_e = d['last_actual_idx']
-    months_e = d['months']
-    ev_fields = ['revenue', 'opex', 'gross_profit', 'gross_margin', 'sga', 'ebitda', 'ebitda_margin',
-                 'da', 'ebit', 'interest_expense', 'ebt', 'taxes', 'net_income', 'ni_margin']
-    ev_pl = mk(d, lai_e, 12, ev_fields)
-    ev_pl['sga_total'] = ev_pl.pop('sga')
-    companies['ev'] = {
-        'key': 'ev', 'name': 'EV Fleets', 'full_name': 'VEMO EV Fleets', 'logo': 'ev',
-        'url': 'https://vemo-fp-a.github.io/EV_BoardD/',
-        'accent': '#117A45',
-        'pl': ev_pl,
-        'kpi_ops': {
-            'epc_backlog': v(d, 'epc_backlog', lai_e),
-            'epc_pipeline': v(d, 'epc_pipeline', lai_e),
-            'zee_total_monitored': v(d, 'zee_total_monitored', lai_e),
-        },
-        'chart': {
-            'months': months_e[0:lai_e+1],
-            'revenue': series(d, 'revenue', 0, lai_e),
-            'ebitda': series(d, 'ebitda', 0, lai_e),
-        },
-        'kpi_charts': {
-            'revenue': spark(d, 'revenue', 'budget_revenue', 0, lai_e),
-            'ebitda': spark(d, 'ebitda', 'budget_ebitda', 0, lai_e),
-            'ebitda_margin': spark(d, 'ebitda_margin', 'budget_ebitda_margin', 0, lai_e),
-            'net_income': spark(d, 'net_income', 'budget_net_income', 0, lai_e),
-        }
-    }
-
-    # ---------- VCN ----------
-    d = extract_D(os.path.join(CACHE, 'VCN_BoardD.html'))
-    lai_v = d['last_actual_idx']
-    months_v = d['months']
-    vcn_fields_direct = ['revenue', 'opex', 'gross_profit', 'gross_margin', 'ebitda', 'ebitda_margin',
-                         'da', 'ebit', 'interest_expense', 'ebt', 'taxes', 'net_income', 'ni_margin']
-    pl_vcn = mk(d, lai_v, 12, vcn_fields_direct)
-
-    def derive_sga(pl):
-        out = {}
-        for period in PERIODS:
-            gp = pl['gross_profit'][period]
-            eb = pl['ebitda'][period]
-            out[period] = (eb - gp) if (gp is not None and eb is not None) else None
-        return out
-
-    pl_vcn['sga_total'] = derive_sga(pl_vcn)
-    companies['vcn'] = {
-        'key': 'vcn', 'name': 'VCN', 'full_name': 'VEMO Charging Network', 'logo': 'vcn',
-        'url': 'https://vemo-fp-a.github.io/VCN_BoardD/',
-        'accent': '#168888',
-        'pl': pl_vcn,
-        'kpi_ops': {
-            'installed_capacity_mw': v(d, 'installed_capacity_mw', lai_v),
-            'total_connectors': v(d, 'total_connectors', lai_v),
-            'utilization': v(d, 'utilization', lai_v),
-        },
-        'chart': {
-            'months': months_v[0:lai_v+1],
-            'revenue': series(d, 'revenue', 0, lai_v),
-            'ebitda': series(d, 'ebitda', 0, lai_v),
-        },
-        'kpi_charts': {
-            'revenue': spark(d, 'revenue', 'budget_revenue', 0, lai_v),
-            'ebitda': spark(d, 'ebitda', 'budget_ebitda', 0, lai_v),
-            'ebitda_margin': spark(d, 'ebitda_margin', 'budget_ebitda_margin', 0, lai_v),
-            'net_income': spark(d, 'net_income', 'budget_net_income', 0, lai_v),
-        }
-    }
-
-    # ---------- LTO / VEMO IMPULSO (negocio financiero: sin revenue/ebitda nativos) ----------
-    d = extract_D(os.path.join(CACHE, 'LTO_BoardD.html'))
-    lai_l = d['last_actual_idx']
-    months_l = d['months']
-
-    def mk_lto(d, lai):
-        def line(field, budget_field):
-            return {'latest': v(d, field, lai), 'ytd': s(d, field, 12, lai),
-                    'py_full': s(d, field, 0, 11), 'budget_ytd': s(d, budget_field, 12, lai),
-                    'budget_latest': v(d, budget_field, lai)}
-        rev = line('net_operating_revenue', 'budget_net_operating_revenue')
-        opex = line('cogs_total', 'budget_cogs_total')
-
-        def gp_calc(period):
-            r = rev[period]; o = opex[period]
-            return (r - o) if (r is not None and o is not None) else None
-        gross_profit = {p: gp_calc(p) for p in PERIODS}
-        sga = line('total_sga', 'budget_total_sga')
-        da = line('da_total', 'budget_da_total')
-        ie = line('interest_expense', 'budget_interest_expense')
-        ebt = line('ebt', 'budget_ebt')
-        taxes = line('taxes', 'budget_taxes')
-        ni = line('net_income', 'budget_net_income')
-
-        def ebitda_calc(period):
-            e = ebt[period]; i = ie[period]; dda = da[period]
-            return (e + (i or 0) + (dda or 0)) if e is not None else None
-        ebitda = {p: ebitda_calc(p) for p in PERIODS}
-
-        def ebit_calc(period):
-            e = ebt[period]; i = ie[period]
-            return (e + (i or 0)) if e is not None else None
-        ebit = {p: ebit_calc(p) for p in PERIODS}
-
-        def margin(num, den):
-            return {p: (num[p]/den[p] if (num[p] is not None and den[p] not in (None, 0)) else None) for p in PERIODS}
-
-        return {
-            'revenue': rev, 'opex': opex, 'gross_profit': gross_profit, 'gross_margin': margin(gross_profit, rev),
-            'sga_total': sga, 'ebitda': ebitda, 'ebitda_margin': margin(ebitda, rev),
-            'da': da, 'ebit': ebit, 'interest_expense': ie, 'ebt': ebt, 'taxes': taxes,
-            'net_income': ni, 'ni_margin': margin(ni, rev),
+    for ck, d in dsets.items():
+        meta = COMPANIES_META[ck]
+        kpis = [resolve_kpi(d, ki, n) for ki in KPI_DEFS[ck]]
+        companies[ck] = {
+            'name': meta['name'], 'full': meta['full'], 'url': meta['url'],
+            'kpis': kpis,
         }
 
-    companies['lto'] = {
-        'key': 'lto', 'name': 'VEMO Impulso', 'full_name': 'VEMO Impulso (LTO)', 'logo': 'lto',
-        'url': 'https://vemo-fp-a.github.io/LTO_BoardD/',
-        'accent': '#7BDADA',
-        'is_financial_model': True,
-        'pl': mk_lto(d, lai_l),
-        'kpi_ops': {
-            'active_units': v(d, 'active_units', lai_l),
-            'net_portfolio_board': v(d, 'net_portfolio_board', lai_l),
-            'roe_pct_board': v(d, 'roe_pct_board', lai_l),
-            'collection_rate': v(d, 'collection_rate', lai_l),
-        },
-        'chart': {
-            'months': months_l[0:lai_l+1],
-            'revenue': series(d, 'net_operating_revenue', 0, lai_l),
-            'ebitda': [round((v(d, 'ebt', i) or 0) + (v(d, 'interest_expense', i) or 0) + (v(d, 'da_total', i) or 0), 1) for i in range(0, lai_l+1)],
-        },
-        'kpi_charts': {
-            'revenue': spark(d, 'net_operating_revenue', 'budget_net_operating_revenue', 0, lai_l),
-            'net_income': spark(d, 'net_income', 'budget_net_income', 0, lai_l),
-            'net_portfolio_board': spark(d, 'net_portfolio_board', 'budget_net_portfolio_board', 0, lai_l),
-            'roe_pct_board': spark(d, 'roe_pct_board', 'budget_roe_pct_board', 0, lai_l),
+    all_lines = {ck: pl_lines(d, ck, n) for ck, d in dsets.items()}
+    consolidated_pl = {}
+    for f in PL_FIELDS:
+        tot_a = [None] * n
+        tot_b = [None] * n
+        for ck in dsets:
+            a, b = all_lines[ck][f]
+            for i in range(n):
+                if a[i] is not None:
+                    tot_a[i] = (tot_a[i] or 0) + a[i]
+                if b[i] is not None:
+                    tot_b[i] = (tot_b[i] or 0) + b[i]
+        consolidated_pl[f] = {
+            'actual': [round(x, 2) if x is not None else None for x in tot_a],
+            'budget': [round(x, 2) if x is not None else None for x in tot_b],
         }
-    }
 
-    MESES_ES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-    gen_month = months[lai]
-    gy, gm = gen_month.split('-')
-    gen_label = f"{MESES_ES[int(gm)]} {gy}"
+    y, m = months[lai].split('-')
+    generated_month_label = f"{MESES_ES[int(m)-1]} {y}"
 
     return {
+        'months': months,
+        'last_actual_idx': lai,
+        'generated_month': months[lai],
+        'generated_month_label': generated_month_label,
         'companies': companies,
-        'generated_month': gen_month,
-        'generated_month_label': gen_label,
-        'spark_months': months[0:lai+1],
+        'consolidated_pl': consolidated_pl,
     }
 
 
@@ -318,12 +324,13 @@ def build_consolidated_data():
     return data
 
 
+
 # ---------- 4) plantilla HTML (con placeholders __X__) ----------
-HTML_TEMPLATE = '<!DOCTYPE html>\n<html lang="es">\n<head>\n<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width, initial-scale=1.0">\n<title>VEMO — Consolidated Executive Summary</title>\n<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">\n<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>\n<style>\n:root{\n  --forest:#1F5454;--teal:#11ABAB;--teal-deep:#168888;--mint:#7BDADA;\n  --red:#C0392B;--green:#117A45;--amber:#E59500;--bg:#f5f6f7;--sf:#fff;--b:#e8eaed;\n  --tx:#222;--tx2:#555;--tx3:#888;--rs:6px;--r:10px;\n}\n*{box-sizing:border-box;margin:0;padding:0}\nbody{font-family:\'Space Grotesk\',sans-serif;background:var(--bg);color:var(--tx);line-height:1.4}\nbody.dark-mode{--bg:#1a1f23;--sf:#22282d;--b:#353c42;--tx:#e6ebee;--tx2:#d4dae0;--tx3:#9aa3ac;--forest:#7BDADA;color:#e6ebee!important}\nbody.dark-mode *{color:inherit}\n.wrap{max-width:1360px;margin:0 auto;padding:28px 24px 60px}\n.topbar{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:28px}\n.title{font-size:28px;font-weight:700;color:var(--forest)}\n.subtitle{font-size:13px;color:var(--tx2);margin-top:4px}\n.topctrls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}\n.seg{display:flex;background:var(--sf);border:1px solid var(--b);border-radius:999px;padding:3px;gap:2px}\n.seg button{border:none;background:transparent;padding:6px 16px;border-radius:999px;font:inherit;font-size:12.5px;font-weight:600;color:var(--tx2);cursor:pointer;transition:.15s}\n.seg button.active{background:var(--forest);color:#fff}\n.iconbtn{width:34px;height:34px;border-radius:999px;border:1px solid var(--b);background:var(--sf);color:var(--tx2);cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center}\n\n.company-block{background:var(--sf);border:1px solid var(--b);border-radius:14px;padding:22px 24px;margin-bottom:22px}\n.company-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:18px}\n.company-id{display:flex;align-items:center;gap:14px}\n.company-logo{height:46px;max-width:130px;object-fit:contain}\n.company-names .cname{font-size:19px;font-weight:700;color:var(--tx)}\n.company-names .cfull{font-size:12px;color:var(--tx3)}\n.company-link{display:inline-flex;align-items:center;gap:6px;background:var(--forest);color:#fff!important;text-decoration:none;font-size:12.5px;font-weight:600;padding:9px 16px;border-radius:999px;white-space:nowrap;transition:.15s}\n.company-link:hover{opacity:.85}\n\n/* KPI cards — matching the sibling per-company dashboards\' Executive Summary cards exactly */\n.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:11px;margin-bottom:18px}\n.kpi-card{background:var(--sf);border:1px solid var(--b);border-radius:10px;padding:13px 15px 14px;position:relative;overflow:hidden;display:flex;flex-direction:column}\n.kpi-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--teal)}\n.kpi-card.amber::before{background:var(--amber)}\n.kpi-card.red::before{background:var(--red)}\n.kpi-l{font-size:9.5px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px}\n.kpi-v{font-size:22px;font-weight:700;color:var(--forest);margin-bottom:3px;font-variant-numeric:tabular-nums;line-height:1.05}\n.kpi-mom{font-size:10.5px;color:var(--tx2);display:flex;align-items:center;gap:5px;margin-top:3px}\n.kpi-mom .arr{font-size:9px}\n.kpi-bud{font-size:10.5px;color:var(--tx2);margin-top:9px;padding-top:8px;border-top:1px dashed #ececec;display:flex;justify-content:space-between;align-items:center;gap:6px}\n.kpi-bud .lbl{color:var(--tx3);font-size:9.5px;letter-spacing:0.04em;text-transform:uppercase}\n.kpi-bud .v{font-weight:600;font-variant-numeric:tabular-nums}\n.neg{color:var(--red)}\n.pos{color:var(--teal)}\n.kpi-spark{margin-top:10px;height:50px;overflow:hidden}\nbody.dark-mode .kpi-spark svg path[stroke="#11ABAB"]{stroke:#7BDADA!important}\nbody.dark-mode .kpi-spark svg path[stroke="#1F5454"]{stroke:#9aa3ac!important}\nbody.dark-mode .kpi-bud{border-top-color:#353c42}\nbody.dark-mode .kpi-card{background:#22282d;border-color:#353c42}\n.kpi-spark-foot{display:flex;justify-content:space-between;font-size:9.5px;color:var(--tx3);margin-top:4px;padding:0 2px}\n\n.chart-box{background:var(--bg);border:1px solid var(--b);border-radius:var(--r);padding:16px 18px 10px;position:relative;height:230px}\n.chart-title{font-size:12px;font-weight:600;color:var(--tx2);margin-bottom:6px}\n\n.section-title-row{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px;margin-top:36px}\n.section-title{font-size:18px;font-weight:700;color:var(--forest);margin:0 0 4px}\n.section-note{font-size:12px;color:var(--tx3);margin-bottom:0;max-width:820px}\n\n.recon-wrap{background:var(--sf);border:1px solid var(--b);border-radius:14px;padding:22px 24px 26px;margin-top:16px;overflow-x:auto}\ntable.recon{border-collapse:collapse;width:100%;min-width:820px;font-size:13px}\ntable.recon th, table.recon td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--b);white-space:nowrap}\ntable.recon th{font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--tx3);font-weight:600}\ntable.recon td:first-child, table.recon th:first-child{text-align:left;font-weight:600;color:var(--tx)}\ntable.recon tr.total td{font-weight:700;border-top:2px solid var(--forest);border-bottom:2px solid var(--forest);color:var(--forest)}\ntable.recon tr.sub td{color:var(--tx3);font-size:12px}\ntable.recon td.neg{color:var(--red)}\ntable.recon td.pos{color:var(--green)}\n.foot-note{font-size:11px;color:var(--tx3);margin-top:14px;line-height:1.6}\n.foot-note sup{color:var(--teal)}\n\n.link-row{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0 8px}\n.link-btn{flex:1;min-width:200px;text-align:center;background:var(--sf);border:1.5px solid var(--forest);color:var(--forest)!important;text-decoration:none;font-weight:600;font-size:13px;padding:13px 16px;border-radius:10px;transition:.15s}\n.link-btn:hover{background:var(--forest);color:#fff!important}\n\nfooter{text-align:center;font-size:11px;color:var(--tx3);margin-top:40px}\n\n@media (max-width:900px){\n  .kpi-row{grid-template-columns:repeat(2,1fr)}\n}\n</style>\n</head>\n<body>\n<div class="wrap">\n  <div class="topbar">\n    <div>\n      <div class="title">VEMO — Consolidated Executive Summary</div>\n      <div class="subtitle" id="subtitleText">DAE · VEMO Impulso · EV Fleets · VCN — actualizado a __GENERATED_MONTH_LABEL__</div>\n    </div>\n    <div class="topctrls">\n      <button class="iconbtn" id="darkToggle" title="Modo oscuro">🌙</button>\n    </div>\n  </div>\n\n  <div id="companies"></div>\n\n  <div class="section-title-row">\n    <div>\n      <div class="section-title">P&amp;L Consolidado — Conciliación</div>\n      <div class="section-note">Suma agregada de los 4 negocios de VEMO en la vista managerial de cada dashboard. No incluye eliminaciones intercompañía adicionales a las ya reflejadas en cada P&amp;L individual.</div>\n    </div>\n    <div class="seg" id="periodSeg">\n      <button data-period="ytd" class="active">YTD 2026</button>\n      <button data-period="latest">Mes actual</button>\n    </div>\n  </div>\n  <div class="recon-wrap">\n    <table class="recon" id="reconTable"></table>\n    <div class="foot-note" id="reconFootnote"></div>\n  </div>\n\n  <footer>VEMO FP&amp;A · Consolidated_fpa · generado automáticamente desde los dashboards de cada empresa</footer>\n</div>\n\n<script>\nconst DATA = __DATA_JSON__;\nconst LOGOS = {\n  dae: "__LOGO_DAE__",\n  ev: "__LOGO_EV__",\n  vcn: "__LOGO_VCN__",\n  lto: "__LOGO_LTO__"\n};\n</script>\n</body>\n</html>\n'
+HTML_TEMPLATE = '<!DOCTYPE html>\n<html lang="es">\n<head>\n<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width, initial-scale=1.0">\n<title>VEMO — Consolidated Executive Summary</title>\n<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">\n<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>\n<style>\n:root{\n  --forest:#1F5454;--teal:#11ABAB;--teal-deep:#168888;--mint:#7BDADA;\n  --red:#C0392B;--green:#117A45;--amber:#E59500;--bg:#f5f6f7;--sf:#fff;--b:#e8eaed;\n  --tx:#222;--tx2:#555;--tx3:#888;--rs:6px;--r:10px;\n}\n*{box-sizing:border-box;margin:0;padding:0}\nbody{font-family:\'Space Grotesk\',sans-serif;background:var(--bg);color:var(--tx);line-height:1.4}\nbody.dark-mode{--bg:#1a1f23;--sf:#22282d;--b:#353c42;--tx:#e6ebee;--tx2:#d4dae0;--tx3:#9aa3ac;--forest:#7BDADA;color:#e6ebee!important}\nbody.dark-mode *{color:inherit}\n.wrap{max-width:1400px;margin:0 auto;padding:28px 24px 60px}\n.topbar{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:28px}\n.title{font-size:28px;font-weight:700;color:var(--forest)}\n.subtitle{font-size:13px;color:var(--tx2);margin-top:4px}\n.iconbtn{width:34px;height:34px;border-radius:999px;border:1px solid var(--b);background:var(--sf);color:var(--tx2);cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center}\n\n.company-block{background:var(--sf);border:1px solid var(--b);border-radius:14px;padding:22px 24px;margin-bottom:22px}\n.company-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:18px}\n.company-id{display:flex;align-items:center;gap:14px}\n.company-logo{height:46px;max-width:130px;object-fit:contain}\n.company-names .cname{font-size:19px;font-weight:700;color:var(--tx)}\n.company-names .cfull{font-size:12px;color:var(--tx3)}\n.company-link{display:inline-flex;align-items:center;gap:6px;background:var(--forest);color:#fff!important;text-decoration:none;font-size:12.5px;font-weight:600;padding:9px 16px;border-radius:999px;white-space:nowrap;transition:.15s}\n.company-link:hover{opacity:.85}\n\n/* KPI cards — ported from each company\'s OWN live "Executive Summary" KPI13 cards */\n.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:11px;margin-bottom:18px}\n.kpi-card{background:var(--sf);border:1px solid var(--b);border-radius:10px;padding:13px 15px 14px;position:relative;overflow:hidden;display:flex;flex-direction:column}\n.kpi-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--teal)}\n.kpi-card.amber::before{background:var(--amber)}\n.kpi-l{font-size:9.5px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px}\n.kpi-v{font-size:22px;font-weight:700;color:var(--forest);margin-bottom:3px;font-variant-numeric:tabular-nums;line-height:1.05}\n.kpi-mom{font-size:10.5px;color:var(--tx2);display:flex;align-items:center;gap:5px;margin-top:3px}\n.kpi-mom .arr{font-size:9px}\n.kpi-bud{font-size:10.5px;color:var(--tx2);margin-top:9px;padding-top:8px;border-top:1px dashed #ececec;display:flex;justify-content:space-between;align-items:center;gap:6px}\n.kpi-bud .lbl{color:var(--tx3);font-size:9.5px;letter-spacing:0.04em;text-transform:uppercase}\n.kpi-bud .v{font-weight:600;font-variant-numeric:tabular-nums}\n.neg{color:var(--red)}\n.pos{color:var(--teal)}\n.kpi-spark{margin-top:10px;height:50px;overflow:hidden}\nbody.dark-mode .kpi-spark svg path[stroke="#11ABAB"]{stroke:#7BDADA!important}\nbody.dark-mode .kpi-spark svg path[stroke="#1F5454"]{stroke:#9aa3ac!important}\nbody.dark-mode .kpi-bud{border-top-color:#353c42}\nbody.dark-mode .kpi-card{background:#22282d;border-color:#353c42}\n.kpi-spark-foot{display:flex;justify-content:space-between;font-size:9.5px;color:var(--tx3);margin-top:4px;padding:0 2px}\n\n/* KPI Trend — dropdown chart, one per company */\n.kpi-trend-bar{background:var(--forest);color:#fff;padding:10px 16px;border-radius:10px 10px 0 0;display:flex;align-items:center;gap:14px;flex-wrap:wrap}\n.kpi-trend-bar .ttl{font-weight:700;font-size:13px;letter-spacing:.02em}\n.kpi-trend-bar select{margin-left:auto;font:inherit;font-size:11px;padding:5px 10px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);color:#fff;border-radius:5px;cursor:pointer;font-weight:600}\n.kpi-trend-bar select option{color:#222}\n.kpi-trend-bar label{font-size:11px;display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap}\n.kpi-trend-box{background:var(--sf);border:1px solid var(--b);border-top:none;border-radius:0 0 10px 10px;padding:16px 18px 10px;height:300px;position:relative}\nbody.dark-mode .kpi-trend-box{background:#22282d;border-color:#353c42}\n\n.section-title-row{margin-top:36px}\n.section-title{font-size:18px;font-weight:700;color:var(--forest);margin:0 0 4px}\n.section-note{font-size:12px;color:var(--tx3);margin-bottom:0;max-width:820px}\n\n.recon-wrap{background:var(--sf);border:1px solid var(--b);border-radius:14px;padding:22px 24px 26px;margin-top:16px;overflow-x:auto}\n.foot-note{font-size:11px;color:var(--tx3);margin-top:14px;line-height:1.6}\n.foot-note sup{color:var(--teal)}\n\n/* vemo-tbl — ported from the source dashboards\' own P&L table format */\n.vemo-tbl{border-collapse:separate;border-spacing:0;width:100%;min-width:980px;font-size:11px;font-variant-numeric:tabular-nums}\n.vemo-tbl th,.vemo-tbl td{padding:7px 10px;text-align:right;background:var(--sf);white-space:nowrap}\n.vemo-tbl thead.grp th{background:var(--teal)!important;color:#fff!important;font-weight:600;font-size:13px;text-align:center;letter-spacing:.02em;padding:11px 10px;border:none;border-right:4px solid #fff!important;border-bottom:4px solid #fff!important}\n.vemo-tbl thead.grp th.firstcol{background:transparent;color:transparent;border:none}\n.vemo-tbl thead.sub th{background:var(--teal)!important;color:#fff!important;font-weight:700;font-size:11px;padding:11px 8px;border-right:2px solid #fff!important;text-align:center;line-height:1.2;letter-spacing:.02em}\n.vemo-tbl thead.sub th.cur{background:var(--mint)!important}\n.vemo-tbl thead.grp th.gend,.vemo-tbl thead.sub th.gend,.vemo-tbl tbody td.gend{border-right:4px solid #fff!important}\n.vemo-tbl thead th.firstcol{background:var(--teal-deep)!important;color:#fff!important;text-align:left;padding-left:16px;font-weight:700;font-size:13px;border-top:0;border-bottom:none}\n.vemo-tbl tbody td{border-bottom:1px solid #ececec;color:var(--tx);background:var(--sf);text-align:center!important}\n.vemo-tbl tbody td.lbl{background:var(--teal-deep)!important;color:#fff!important;font-weight:500;padding-left:16px;text-align:left!important;min-width:210px}\n.vemo-tbl tbody td.cur{background:#e3f4f4!important}\n.vemo-tbl tbody td.italic{font-style:italic;color:#888;font-size:10.5px}\n.vemo-tbl tbody td.lbl.italic{font-style:italic;font-weight:500;color:rgba(255,255,255,.85);font-size:11px;background:var(--teal-deep)}\n.vemo-tbl tbody td.neg{color:var(--red);font-weight:700}\n.vemo-tbl tbody td.pos{color:var(--green);font-weight:700}\n.vemo-tbl tbody tr.subtot td{background:#d4edec!important;font-weight:700;color:var(--forest);font-size:11.5px}\n.vemo-tbl tbody tr.subtot td.lbl{background:var(--teal)!important;color:#fff!important;font-weight:700;font-size:12px}\n.vemo-tbl tbody tr.subtot td.cur{background:#bfe4e3!important}\n.vemo-tbl tbody tr.subtot td.neg{color:var(--red)}\n.vemo-tbl tbody tr.subtot td.pos{color:var(--teal-deep)}\nbody.dark-mode .vemo-tbl{background:#22282d;color:#d4dae0}\nbody.dark-mode .vemo-tbl tbody td{color:#d4dae0!important;background:#22282d}\nbody.dark-mode .vemo-tbl tbody td.cur{background:#2a3137!important}\nbody.dark-mode .vemo-tbl tbody tr.subtot td{background:#2a3137!important;color:var(--mint)!important}\nbody.dark-mode .vemo-tbl tbody tr.subtot td.cur{background:#324047!important}\n\nfooter{text-align:center;font-size:11px;color:var(--tx3);margin-top:40px}\n</style>\n</head>\n<body>\n<div class="wrap">\n  <div class="topbar">\n    <div>\n      <div class="title">VEMO — Consolidated Executive Summary</div>\n      <div class="subtitle" id="subtitleText">DAE · VEMO Impulso · EV Fleets · VCN — actualizado a __GENERATED_MONTH_LABEL__</div>\n    </div>\n    <div class="topctrls">\n      <button class="iconbtn" id="darkToggle" title="Modo oscuro">🌙</button>\n    </div>\n  </div>\n\n  <div id="companies"></div>\n\n  <div class="section-title-row">\n    <div>\n      <div class="section-title">P&amp;L Consolidado</div>\n      <div class="section-note">Suma agregada de los 4 negocios de VEMO (DAE, VEMO Impulso, EV Fleets, VCN), en el mismo formato de P&amp;L de los dashboards individuales. No incluye eliminaciones intercompañía adicionales a las ya reflejadas en cada P&amp;L individual.</div>\n    </div>\n  </div>\n  <div class="recon-wrap">\n    <table class="vemo-tbl" id="reconTable"></table>\n    <div class="foot-note" id="reconFootnote"></div>\n  </div>\n\n  <footer>VEMO FP&amp;A · Consolidated_fpa · generado automáticamente desde los dashboards de cada empresa</footer>\n</div>\n\n<script>\nconst DATA = __DATA_JSON__;\nconst LOGOS = {\n  dae: "__LOGO_DAE__",\n  ev: "__LOGO_EV__",\n  vcn: "__LOGO_VCN__",\n  lto: "__LOGO_LTO__"\n};\n</script>\n</body>\n</html>\n'
 
 
 # ---------- 5) logica de render (se incrusta inline en index.html) ----------
-APP_JS = '/* VEMO Consolidated Executive Summary — render logic */\nlet currentPeriod = \'ytd\'; // \'ytd\' | \'latest\' — only drives the P&L reconciliation table\nconst budgetKeyFor = { ytd: \'budget_ytd\', latest: \'budget_latest\' };\nconst chartInstances = {};\n\n/* ---------- formatting helpers (ported to match the sibling per-company\n   dashboards\' KPI13 cards byte-for-byte: parens for negatives, "$" for\n   money, "bps"/"%" with parens, mlblShort month labels) ---------- */\nconst MN = [\'Ene\',\'Feb\',\'Mar\',\'Abr\',\'May\',\'Jun\',\'Jul\',\'Ago\',\'Sep\',\'Oct\',\'Nov\',\'Dic\'];\nfunction mlblShort(m){\n  if (!m) return \'—\';\n  const [y, mo] = m.split(\'-\');\n  return (MN[+mo - 1] || mo) + \' \' + y.slice(2);\n}\nfunction fmtMm(n){ // money in millions, parens for negative — e.g. "$42.5" / "($12.3)"\n  if (n===null || n===undefined || isNaN(n)) return \'—\';\n  const v = n/1e6, a = Math.abs(v);\n  return (v<0?\'($\':\'$\') + a.toFixed(1) + (v<0?\')\':\'\');\n}\nfunction fmtPctParen(p){ // p is a fraction (e.g. -0.0725) -> "(7.3%)" / "7.3%"\n  if (p===null || p===undefined || isNaN(p)) return \'—\';\n  const pct = p*100, a = Math.abs(pct);\n  return (pct<0?\'(\':\'\') + a.toFixed(1) + \'%\' + (pct<0?\')\':\'\');\n}\nfunction fmtBps(b){\n  if (b===null || b===undefined || isNaN(b)) return \'—\';\n  const a = Math.abs(b);\n  return (b<0?\'(\':\'\') + Math.round(a).toLocaleString() + \' bps\' + (b<0?\')\':\'\');\n}\n// plain (non-parens) versions, used in the P&L reconciliation table & big charts\nfunction fmtMoney(v){\n  if (v===null || v===undefined || isNaN(v)) return \'—\';\n  const abs = Math.abs(v);\n  const sign = v<0 ? \'-\' : \'\';\n  return sign + \'$\' + (abs/1e6).toLocaleString(\'es-MX\',{minimumFractionDigits:1,maximumFractionDigits:1}) + \'M\';\n}\nfunction fmtPct(v){\n  if (v===null || v===undefined || isNaN(v)) return \'—\';\n  return (v*100).toLocaleString(\'es-MX\',{minimumFractionDigits:1,maximumFractionDigits:1}) + \'%\';\n}\n\n/* ---------- KPI card spec per company ----------\n   isPct: value is a fraction (margin/ROE) needing *100 for display & bps deltas\n   better: \'up\' -> higher is favorable (all 8 of our metrics are \'up\') */\nconst KPI_SPECS = {\n  dae: [\n    {label:\'Revenue\', dataKey:\'revenue\', isPct:false},\n    {label:\'EBITDA\', dataKey:\'ebitda\', isPct:false},\n    {label:\'EBITDA Margin\', dataKey:\'ebitda_margin\', isPct:true},\n    {label:\'Utilidad Neta\', dataKey:\'net_income\', isPct:false},\n  ],\n  ev: [\n    {label:\'Revenue\', dataKey:\'revenue\', isPct:false},\n    {label:\'EBITDA\', dataKey:\'ebitda\', isPct:false},\n    {label:\'EBITDA Margin\', dataKey:\'ebitda_margin\', isPct:true},\n    {label:\'Utilidad Neta\', dataKey:\'net_income\', isPct:false},\n  ],\n  vcn: [\n    {label:\'Revenue\', dataKey:\'revenue\', isPct:false},\n    {label:\'EBITDA\', dataKey:\'ebitda\', isPct:false},\n    {label:\'EBITDA Margin\', dataKey:\'ebitda_margin\', isPct:true},\n    {label:\'Utilidad Neta\', dataKey:\'net_income\', isPct:false},\n  ],\n  lto: [\n    {label:\'Ingreso Oper. Neto\', dataKey:\'revenue\', isPct:false},\n    {label:\'Utilidad Neta\', dataKey:\'net_income\', isPct:false},\n    {label:\'Cartera Neta\', dataKey:\'net_portfolio_board\', isPct:false},\n    {label:\'ROE (mensual)\', dataKey:\'roe_pct_board\', isPct:true},\n  ],\n};\n\nfunction devPct(a, b){ if (b===null || b===undefined || !b || isNaN(b)) return null; return (a-b)/Math.abs(b)*100; }\nfunction devBps(a, b){ if (b===null || b===undefined || isNaN(b)) return null; return (a-b)*10000; }\nfunction isNegBetter(p){ if (p===null || p===undefined) return false; return p < 0; } // all our metrics are better:\'up\'\n\n/* ---------- inline SVG sparkline — ported verbatim from the sibling dashboards ---------- */\nfunction kpiSparkline(series, budgetSeries, w, h){\n  w = w || 260; h = h || 50;\n  const vals = series.filter(v => v !== null && v !== undefined && !isNaN(v));\n  if (!vals.length) return \'\';\n  const budVals = (budgetSeries || []).filter(v => v !== null && v !== undefined && !isNaN(v) && v !== 0);\n  const allVals = vals.concat(budVals);\n  const mn = Math.min(0, Math.min.apply(null, allVals)), mx = Math.max.apply(null, allVals);\n  const range = mx - mn || 1;\n  const n = series.length;\n  const stepX = n > 1 ? w / (n - 1) : w;\n  function y(v){ return h - ((v - mn) / range) * (h - 6) - 3; }\n  let path = \'M0,\' + h + \' \';\n  for (let i=0; i<n; i++){\n    const v = series[i]; if (v === null || v === undefined || isNaN(v)) continue;\n    path += \'L\' + (i*stepX).toFixed(1) + \',\' + y(v).toFixed(1) + \' \';\n  }\n  path += \'L\' + w + \',\' + h + \' Z\';\n  let linePath = \'\', started = false;\n  for (let i=0; i<n; i++){\n    const v = series[i]; if (v === null || v === undefined || isNaN(v)) continue;\n    linePath += (started ? \'L\' : \'M\') + (i*stepX).toFixed(1) + \',\' + y(v).toFixed(1) + \' \';\n    started = true;\n  }\n  let budgetPath = \'\';\n  if (budgetSeries && budgetSeries.length){\n    let bs = false;\n    for (let i=0; i<n; i++){\n      const bv = budgetSeries[i]; if (bv === null || bv === undefined || isNaN(bv) || bv === 0) continue;\n      budgetPath += (bs ? \'L\' : \'M\') + (i*stepX).toFixed(1) + \',\' + y(bv).toFixed(1) + \' \';\n      bs = true;\n    }\n  }\n  return \'<svg viewBox="0 0 \' + w + \' \' + h + \'" preserveAspectRatio="none" style="display:block;width:100%;height:100%">\' +\n    \'<defs><linearGradient id="spg" x1="0" y1="0" x2="0" y2="1">\' +\n    \'<stop offset="0%" stop-color="#11ABAB" stop-opacity="0.30"/>\' +\n    \'<stop offset="100%" stop-color="#11ABAB" stop-opacity="0.03"/>\' +\n    \'</linearGradient></defs>\' +\n    \'<path d="\' + path + \'" fill="url(#spg)" stroke="none"/>\' +\n    \'<path d="\' + linePath + \'" fill="none" stroke="#11ABAB" stroke-width="1.8"/>\' +\n    (budgetPath ? \'<path d="\' + budgetPath + \'" fill="none" stroke="#1F5454" stroke-width="1.2" stroke-dasharray="3,2" opacity="0.7"/>\' : \'\') +\n    \'</svg>\';\n}\n\nfunction fmtRangeVal(v, isPct){\n  if (v === null || v === undefined || isNaN(v)) return \'\';\n  if (isPct) return (v*100).toFixed(0) + \'%\';\n  const a = Math.abs(v);\n  if (a >= 1e9) return (v/1e9).toFixed(1) + \'B\';\n  if (a >= 1e6) return (v/1e6).toFixed(1) + \'M\';\n  if (a >= 1e3) return (v/1e3).toFixed(0) + \'k\';\n  return v.toFixed(1);\n}\n\nfunction kpiCardHTML(spec, company){\n  const kc = company.kpi_charts[spec.dataKey];\n  const months = DATA.spark_months;\n  const n = months.length;\n  const cur = n - 1, prev = n - 2;\n  const actual = kc ? kc.actual : [];\n  const budget = kc ? kc.budget : [];\n  const val = actual[cur];\n  const valPrev = actual[prev];\n  const valBud = budget[cur];\n\n  const momPct = spec.isPct ? null : devPct(val, valPrev);\n  const momBps = spec.isPct ? devBps(val, valPrev) : null;\n  const budPct = spec.isPct ? null : (valBud ? devPct(val, valBud) : null);\n  const budBps = spec.isPct ? devBps(val, valBud) : null;\n\n  const momTxt = spec.isPct ? fmtBps(momBps) : (momPct===null ? \'—\' : fmtPctParen(momPct/100));\n  const budTxt = spec.isPct ? fmtBps(budBps) : (budPct===null ? \'n.a.\' : fmtPctParen(budPct/100));\n  const momVal = spec.isPct ? momBps : momPct;\n  const budVal = spec.isPct ? budBps : budPct;\n  const momCls = isNegBetter(momVal) ? \'neg\' : \'pos\';\n  const budCls = isNegBetter(budVal) ? \'neg\' : \'pos\';\n  const arrSym = momVal===null ? \'\' : (momVal>=0 ? \'▲\' : \'▼\');\n  // amber left-border: ported verbatim from the source dashboards\' KPI13 cards —\n  // triggered by an unfavorable MoM move, NOT by vs-Budget performance\n  const cardCls = isNegBetter(momVal) ? \'amber\' : \'\';\n\n  const fmtCardVal = spec.isPct ? fmtPctParen(val) : fmtMm(val);\n  const fmtBudVal = spec.isPct ? fmtPctParen(valBud) : fmtMm(valBud);\n\n  const sparkline = kpiSparkline(actual, budget, 260, 50);\n  const rangeVals = actual.filter(v => v !== null && v !== undefined && !isNaN(v));\n  let rangeTxt = \'\';\n  if (rangeVals.length){\n    const mn = Math.min(...rangeVals), mx = Math.max(...rangeVals);\n    rangeTxt = fmtRangeVal(mn, spec.isPct) + \' – \' + fmtRangeVal(mx, spec.isPct);\n  }\n  const dateRangeTxt = mlblShort(months[0]) + \' – \' + mlblShort(months[cur]);\n\n  return `<div class="kpi-card ${cardCls}">\n    <div class="kpi-l">${spec.label}</div>\n    <div class="kpi-v">${fmtCardVal}</div>\n    <div class="kpi-mom"><span class="arr ${momCls}">${arrSym}</span> <span class="${momCls}">${momTxt}</span> <span style="color:var(--tx3)">vs ${mlblShort(months[prev])}</span></div>\n    ${valBud!==null && valBud!==undefined ? `<div class="kpi-bud"><span><span class="lbl">vs Budget</span> ${fmtBudVal}</span><span class="v ${budCls}">${budTxt}</span></div>` : \'\'}\n    <div class="kpi-spark">${sparkline}</div>\n    <div class="kpi-spark-foot"><span>${rangeTxt}</span><span>${dateRangeTxt}</span></div>\n  </div>`;\n}\n\nfunction monthLabel(m){\n  const meses = {\'01\':\'Ene\',\'02\':\'Feb\',\'03\':\'Mar\',\'04\':\'Abr\',\'05\':\'May\',\'06\':\'Jun\',\'07\':\'Jul\',\'08\':\'Ago\',\'09\':\'Sep\',\'10\':\'Oct\',\'11\':\'Nov\',\'12\':\'Dic\'};\n  const [y,mo] = m.split(\'-\');\n  return meses[mo] + " \'" + y.slice(2);\n}\n\nfunction renderCompanyBlock(c){\n  const spec = KPI_SPECS[c.key];\n  const kpiHTML = spec.map(s => kpiCardHTML(s, c)).join(\'\');\n  const chartId = `chart-${c.key}`;\n  return `\n  <div class="company-block">\n    <div class="company-head">\n      <div class="company-id">\n        <img class="company-logo" src="${LOGOS[c.logo]}" alt="${c.name} logo">\n        <div class="company-names">\n          <div class="cname">${c.name}</div>\n          <div class="cfull">${c.full_name}</div>\n        </div>\n      </div>\n      <a class="company-link" href="${c.url}" target="_blank" rel="noopener">Company Board Deck →</a>\n    </div>\n    <div class="kpi-grid">${kpiHTML}</div>\n    <div class="chart-box">\n      <div class="chart-title">${c.key === \'lto\' ? \'Ingreso Operativo Neto (barras) vs. Utilidad Neta (línea) · mensual\' : \'Revenue (barras) vs. EBITDA (línea) · mensual\'}</div>\n      <canvas id="${chartId}"></canvas>\n    </div>\n  </div>`;\n}\n\nfunction buildChart(c){\n  const ctx = document.getElementById(`chart-${c.key}`);\n  if (!ctx) return;\n  const months = c.chart.months.map(monthLabel);\n  const isDark = document.body.classList.contains(\'dark-mode\');\n  const gridColor = isDark ? \'#353c42\' : \'#e8eaed\';\n  const txColor = isDark ? \'#9aa3ac\' : \'#888\';\n  if (chartInstances[c.key]) chartInstances[c.key].destroy();\n  chartInstances[c.key] = new Chart(ctx, {\n    data: {\n      labels: months,\n      datasets: [\n        {\n          type: \'bar\',\n          label: c.key === \'lto\' ? \'Ingreso Oper. Neto\' : \'Revenue\',\n          data: c.chart.revenue,\n          backgroundColor: c.accent + \'55\',\n          borderColor: c.accent,\n          borderWidth: 1,\n          borderRadius: 3,\n          order: 2,\n          yAxisID: \'y\',\n        },\n        {\n          type: \'line\',\n          label: c.key === \'lto\' ? \'Utilidad Neta\' : \'EBITDA\',\n          data: c.chart.ebitda,\n          borderColor: \'#1F5454\',\n          backgroundColor: \'#1F5454\',\n          pointRadius: 2,\n          tension: 0.3,\n          order: 1,\n          yAxisID: \'y\',\n        },\n      ],\n    },\n    options: {\n      responsive: true,\n      maintainAspectRatio: false,\n      interaction: { mode: \'index\', intersect: false },\n      plugins: {\n        legend: { position: \'bottom\', labels: { boxWidth: 10, font: { size: 10 }, color: txColor } },\n        tooltip: {\n          callbacks: {\n            label: (item) => `${item.dataset.label}: ${fmtMoney(item.raw)}`,\n          }\n        },\n      },\n      scales: {\n        x: { grid: { display: false }, ticks: { font: { size: 9 }, color: txColor, maxRotation: 0 } },\n        y: {\n          grid: { color: gridColor },\n          ticks: { font: { size: 9 }, color: txColor, callback: (v) => fmtMoney(v) },\n        },\n      },\n    },\n  });\n}\n\n// ---------- P&L reconciliation table ----------\nconst RECON_ROWS = [\n  {label:\'Revenue / Ingreso Operativo Neto\', field:\'revenue\'},\n  {label:\'Costo Operativo (Opex)\', field:\'opex\', neg:true},\n  {label:\'Utilidad Bruta\', field:\'gross_profit\', subtotal:true},\n  {label:\'SG&A\', field:\'sga_total\', neg:true},\n  {label:\'EBITDA\', field:\'ebitda\', subtotal:true, note:1},\n  {label:\'D&A\', field:\'da\', neg:true},\n  {label:\'EBIT\', field:\'ebit\', subtotal:true},\n  {label:\'Gastos Financieros\', field:\'interest_expense\', neg:true},\n  {label:\'EBT (Utilidad antes de Impuestos)\', field:\'ebt\', subtotal:true},\n  {label:\'Impuestos\', field:\'taxes\', neg:true},\n  {label:\'Utilidad Neta Consolidada\', field:\'net_income\', total:true},\n];\nconst RECON_ORDER = [\'dae\',\'lto\',\'ev\',\'vcn\'];\n\nfunction cellClass(val, neg){\n  if (val===null || val===undefined) return \'\';\n  if (neg) return val < 0 ? \'neg\' : (val > 0 ? \'pos\' : \'\');\n  return \'\';\n}\n\nfunction renderRecon(){\n  const periodKey = currentPeriod;\n  const companies = DATA.companies;\n  let thead = `<thead><tr><th>Línea (${currentPeriod===\'ytd\'?\'YTD 2026\':DATA.generated_month_label})</th>`;\n  RECON_ORDER.forEach(k => thead += `<th>${companies[k].name}</th>`);\n  thead += `<th>Total VEMO</th></tr></thead>`;\n\n  let tbody = \'<tbody>\';\n  RECON_ROWS.forEach(row => {\n    let total = 0, hasAny = false;\n    let cells = \'\';\n    RECON_ORDER.forEach(k => {\n      const line = companies[k].pl[row.field];\n      const val = line ? line[periodKey] : null;\n      if (val !== null && val !== undefined){ total += val; hasAny = true; }\n      cells += `<td class="${cellClass(val, row.neg)}">${fmtMoney(val)}</td>`;\n    });\n    const rowCls = row.total ? \'total\' : (row.subtotal ? \'sub\' : \'\');\n    const noteSup = row.note ? \'<sup>1</sup>\' : \'\';\n    tbody += `<tr class="${rowCls}"><td>${row.label}${noteSup}</td>${cells}<td>${hasAny ? fmtMoney(total) : \'—\'}</td></tr>`;\n  });\n  tbody += \'</tbody>\';\n  document.getElementById(\'reconTable\').innerHTML = thead + tbody;\n\n  document.getElementById(\'reconFootnote\').innerHTML =\n    `<sup>1</sup> VEMO Impulso (LTO) es un negocio financiero (leasing) y no reporta EBITDA nativamente; ` +\n    `para esta conciliación se calcula como EBT + Gastos Financieros + D&amp;A, de forma consistente con el resto de las empresas. ` +\n    `Sus KPIs propios (ROE, Cartera Neta) se muestran en su tarjeta arriba en vez de EBITDA.`;\n}\n\n// ---------- init ----------\nfunction renderCompanies(){\n  const wrap = document.getElementById(\'companies\');\n  const order = [\'dae\',\'lto\',\'ev\',\'vcn\'];\n  wrap.innerHTML = order.map(k => renderCompanyBlock(DATA.companies[k])).join(\'\');\n  order.forEach(k => buildChart(DATA.companies[k]));\n}\n\ndocument.getElementById(\'periodSeg\').addEventListener(\'click\', (e) => {\n  const btn = e.target.closest(\'button\');\n  if (!btn) return;\n  currentPeriod = btn.dataset.period;\n  [...document.getElementById(\'periodSeg\').children].forEach(b => b.classList.toggle(\'active\', b===btn));\n  renderRecon();\n});\n\ndocument.getElementById(\'darkToggle\').addEventListener(\'click\', () => {\n  document.body.classList.toggle(\'dark-mode\');\n  document.getElementById(\'darkToggle\').textContent = document.body.classList.contains(\'dark-mode\') ? \'☀️\' : \'🌙\';\n  buildChart_all();\n});\nfunction buildChart_all(){\n  [\'dae\',\'lto\',\'ev\',\'vcn\'].forEach(k => buildChart(DATA.companies[k]));\n}\n\nrenderCompanies();\nrenderRecon();\n'
+APP_JS = '/* ===================================================================\n   VEMO — Consolidated Executive Summary — app.js\n   Rebuilt to match the REAL per-company KPI13 cards + KPI Trend\n   dropdown chart + P&L table format/lines from the 4 live dashboards.\n   =================================================================== */\n\nlet YTD_START = 0;\nconst charts = {};\n\n/* ---------------- generic formatters ---------------- */\nfunction fmtInt(v){ if(v==null) return \'n.a.\'; return Math.round(v).toLocaleString(\'es-MX\'); }\nfunction fmtN(v,d){ if(v==null) return \'n.a.\'; return v.toLocaleString(\'es-MX\',{minimumFractionDigits:d,maximumFractionDigits:d}); }\nfunction fmtPct(v,d){ if(v==null) return \'n.a.\'; const s=Math.abs(v).toFixed(d)+\'%\'; return v<0?\'(\'+s+\')\':s; }\nfunction fmtMm(v){ if(v==null) return \'n.a.\'; const m=v/1e6; const s=Math.abs(m).toLocaleString(\'es-MX\',{minimumFractionDigits:1,maximumFractionDigits:1}); return m<0?\'(\'+s+\'M)\':s+\'M\'; }\nfunction fmtK(v){ if(v==null) return \'n.a.\'; const k=v/1000; const s=Math.abs(k).toLocaleString(\'es-MX\',{minimumFractionDigits:1,maximumFractionDigits:1}); return k<0?\'(\'+s+\'k)\':s+\'k\'; }\nfunction mlbl(m){\n  if(!m) return \'\';\n  const [y,mo]=m.split(\'-\');\n  const names=[\'Ene\',\'Feb\',\'Mar\',\'Abr\',\'May\',\'Jun\',\'Jul\',\'Ago\',\'Sep\',\'Oct\',\'Nov\',\'Dic\'];\n  return names[parseInt(mo,10)-1]+"\'"+y.slice(2);\n}\nfunction unitSuffixFor(unit){\n  if(!unit) return \'\';\n  if(unit===\'#\'||unit===\'%\') return \'\';\n  if(/\\$/.test(unit)) return \'\';\n  return unit;\n}\nfunction fmtValCard(v, ki){\n  if(v==null) return \'n.a.\';\n  let s;\n  if(ki.type===\'pct\') return fmtPct(v*100,1);\n  if(ki.type===\'money\'){\n    s = ki.fmt===\'mm\' ? fmtMm(v) : fmtN(v,1);\n    if(/MXN|\\$/.test(ki.unit||\'\')) s=\'$\'+s;\n    return s;\n  }\n  switch(ki.fmt){\n    case \'int\': s=fmtInt(v); break;\n    case \'k\':   s=fmtK(v); break;\n    case \'mm\':  s=fmtMm(v); break;\n    case \'n0\':  s=fmtN(v,0); break;\n    case \'n2\':  s=fmtN(v,2); break;\n    case \'n1\':\n    default:    s=fmtN(v,1);\n  }\n  if(/MXN|\\$/.test(ki.unit||\'\')) s=\'$\'+s;\n  return s;\n}\n\n/* ---------------- sparkline ---------------- */\nfunction sparklineSVG(data, w, h){\n  w = w||180; h = h||44;\n  const vals = data.filter(v=>v!=null);\n  if(vals.length < 2) return \'\';\n  const min=Math.min(...vals), max=Math.max(...vals);\n  const range = (max-min)||1;\n  const n=data.length;\n  const stepX = w/((n-1)||1);\n  const pts=[];\n  data.forEach((v,i)=>{\n    if(v==null) return;\n    const x=i*stepX;\n    const y=h-2 - ((v-min)/range)*(h-4);\n    pts.push([x,y]);\n  });\n  if(pts.length<2) return \'\';\n  const linePath = \'M\'+pts.map(p=>p[0].toFixed(1)+\',\'+p[1].toFixed(1)).join(\' L\');\n  const last=pts[pts.length-1], first=pts[0];\n  const areaPath = linePath+` L${last[0].toFixed(1)},${h} L${first[0].toFixed(1)},${h} Z`;\n  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none">\n    <path d="${areaPath}" fill="rgba(123,218,218,0.25)" stroke="none"/>\n    <path d="${linePath}" fill="none" stroke="#11ABAB" stroke-width="1.6"/>\n  </svg>`;\n}\n\n/* ---------------- KPI card ---------------- */\nfunction kpiCardHTML(ki, LI){\n  const data = ki.data, spark = ki.spark || ki.data, budget = ki.budget;\n  const cur = data[LI], prev = LI>=1?data[LI-1]:null, yoy = LI>=12?data[LI-12]:null;\n  const mom = (cur!=null && prev!=null && prev!==0) ? (cur-prev)/Math.abs(prev) : null;\n  const bud = budget ? budget[LI] : null;\n  const vsBud = (cur!=null && bud!=null && bud!==0) ? (cur-bud)/Math.abs(bud) : null;\n  const better = ki.better || \'up\';\n  const momGood = mom!=null && ((better===\'up\'&&mom>=0)||(better===\'down\'&&mom<=0));\n  const isAmber = mom!=null && !momGood;\n  const momCls = mom==null ? \'\' : (momGood?\'pos\':\'neg\');\n  const arrow = mom==null ? \'\' : (mom>=0?\'▲\':\'▼\');\n  const budGood = vsBud!=null && ((better===\'up\'&&vsBud>=0)||(better===\'down\'&&vsBud<=0));\n  const budCls = vsBud==null ? \'\' : (budGood?\'pos\':\'neg\');\n  const sparkData = spark.slice(0, LI+1);\n  const startIdx = Math.max(0, LI - sparkData.filter(v=>v!=null).length + 1);\n  const unitSuffix = unitSuffixFor(ki.unit);\n  return `<div class="kpi-card${isAmber?\' amber\':\'\'}">\n    <div class="kpi-l">${ki.l}</div>\n    <div class="kpi-v">${fmtValCard(cur,ki)}${unitSuffix?`<span style="font-size:11px;font-weight:600;color:var(--tx3)"> ${unitSuffix}</span>`:\'\'}</div>\n    <div class="kpi-mom">${mom!=null\n        ? `<span class="arr ${momCls}">${arrow}</span><span class="${momCls}">${fmtPct(mom*100,1)} MoM</span>`\n        : `<span style="color:var(--tx3)">Sin dato MoM</span>`}</div>\n    <div class="kpi-spark">${sparklineSVG(sparkData)}</div>\n    <div class="kpi-spark-foot"><span>${mlbl(DATA.months[startIdx])}</span><span>${mlbl(DATA.months[LI])}</span></div>\n    <div class="kpi-bud"><span class="lbl">vs Presup.</span><span class="v ${budCls}">${bud!=null?fmtPct(vsBud*100,1):\'n.a.\'}</span></div>\n  </div>`;\n}\n\n/* ---------------- company block ---------------- */\nfunction renderCompanyBlock(ck){\n  const c = DATA.companies[ck];\n  const LI = DATA.last_actual_idx;\n  const cardsHtml = c.kpis.map(ki=>kpiCardHTML(ki,LI)).join(\'\');\n  const optsHtml = c.kpis.map((ki,i)=>`<option value="${i}">${ki.l}</option>`).join(\'\');\n  return `<div class="company-block" id="block-${ck}">\n    <div class="company-head">\n      <div class="company-id">\n        <img class="company-logo" src="${LOGOS[ck]}" alt="${c.name}">\n        <div class="company-names"><div class="cname">${c.name}</div><div class="cfull">${c.full}</div></div>\n      </div>\n      <a class="company-link" href="${c.url}" target="_blank" rel="noopener">Ver dashboard completo &rarr;</a>\n    </div>\n    <div class="kpi-grid">${cardsHtml}</div>\n    <div class="kpi-trend-bar">\n      <span class="ttl">\\u{1F4C8} KPI Trend</span>\n      <label><input type="checkbox" class="kt-bud" data-c="${ck}" checked> Presupuesto</label>\n      <label><input type="checkbox" class="kt-proj" data-c="${ck}"> Run-Rate</label>\n      <select class="kt-picker" data-c="${ck}">${optsHtml}</select>\n    </div>\n    <div class="kpi-trend-box"><canvas id="chart-${ck}"></canvas></div>\n  </div>`;\n}\n\n/* ---------------- KPI Trend chart (one per company) ---------------- */\nfunction renderTrendChart(ck){\n  const c = DATA.companies[ck];\n  const sel = document.querySelector(`.kt-picker[data-c="${ck}"]`);\n  const showBud = document.querySelector(`.kt-bud[data-c="${ck}"]`).checked;\n  const showProj = document.querySelector(`.kt-proj[data-c="${ck}"]`).checked;\n  const ki = c.kpis[parseInt(sel.value,10)];\n  const LI = DATA.last_actual_idx;\n  const months = DATA.months;\n  let endIdx = Math.min(months.length-1, LI + (showProj?3:0));\n  const labels = months.slice(0,endIdx+1).map(mlbl);\n  const mainData = months.slice(0,endIdx+1).map((m,i)=> i<=LI ? ki.data[i] : null);\n\n  const datasets = [{\n    label: ki.l, data: mainData,\n    borderColor:\'#11ABAB\', backgroundColor:\'rgba(123,218,218,0.30)\',\n    fill:true, tension:0.32, pointRadius:2.5, pointBackgroundColor:\'#168888\',\n    borderWidth:2, spanGaps:true\n  }];\n\n  if(showBud && ki.budget){\n    const curYear = months[LI].split(\'-\')[0];\n    const budData = months.slice(0,endIdx+1).map((m,i)=>{\n      const b = ki.budget[i];\n      if(b==null || b===0) return null;\n      return m >= curYear+\'-01\' ? b : null;\n    });\n    datasets.push({\n      label: ki.l+\' (Presup.)\', data: budData,\n      borderColor:\'#1F5454\', borderDash:[6,4], fill:false,\n      pointRadius:0, borderWidth:1.6, spanGaps:true\n    });\n  }\n\n  if(showProj){\n    const window3 = ki.data.slice(Math.max(0,LI-2), LI+1).filter(v=>v!=null);\n    if(window3.length>=1){\n      const avg = window3.reduce((a,b)=>a+b,0)/window3.length;\n      const projData = months.slice(0,endIdx+1).map((m,i)=>{\n        if(i===LI) return ki.data[LI];\n        if(i>LI) return avg;\n        return null;\n      });\n      datasets.push({\n        label:\'Run-Rate (prom. 3m)\', data: projData,\n        borderColor:\'#7BDADA\', borderDash:[3,3], fill:false,\n        pointRadius:0, borderWidth:1.6, spanGaps:true\n      });\n    }\n  }\n\n  const canvas = document.getElementById(`chart-${ck}`);\n  if(charts[ck]) charts[ck].destroy();\n  charts[ck] = new Chart(canvas, {\n    type:\'line\',\n    data:{labels, datasets},\n    options:{\n      responsive:true, maintainAspectRatio:false,\n      interaction:{mode:\'index\',intersect:false},\n      plugins:{\n        legend:{display: datasets.length>1, position:\'bottom\', labels:{boxWidth:12,font:{size:10}}},\n        tooltip:{callbacks:{label:(ctx)=> `${ctx.dataset.label}: ${fmtValCard(ctx.parsed.y, ki)}`}}\n      },\n      scales:{\n        y:{ ticks:{ callback:(v)=>fmtValCard(v,ki), font:{size:10} }, grid:{color:\'rgba(0,0,0,0.06)\'} },\n        x:{ ticks:{ maxRotation:0, autoSkip:true, font:{size:10} }, grid:{display:false} }\n      }\n    }\n  });\n}\n\nfunction bindCompanyControls(ck){\n  document.querySelector(`.kt-picker[data-c="${ck}"]`).addEventListener(\'change\', ()=>renderTrendChart(ck));\n  document.querySelector(`.kt-bud[data-c="${ck}"]`).addEventListener(\'change\', ()=>renderTrendChart(ck));\n  document.querySelector(`.kt-proj[data-c="${ck}"]`).addEventListener(\'change\', ()=>renderTrendChart(ck));\n}\n\n/* ---------------- P&L Consolidado table ---------------- */\nfunction sumRange(arr,start,end){\n  let s=0, any=false;\n  for(let i=start;i<=end;i++){ if(arr[i]!=null){ s+=arr[i]; any=true; } }\n  return any ? s : null;\n}\nfunction pctDelta(cur,base){\n  if(cur==null||base==null||base===0) return null;\n  return (cur-base)/Math.abs(base);\n}\nfunction fmtMoney(v){ return v==null ? \'—\' : fmtMm(v); }\nfunction clsSign(v){ if(v==null) return \'\'; return v>0?\'pos\':(v<0?\'neg\':\'\'); }\n\nfunction plHeaderRows(){\n  const LI = DATA.last_actual_idx;\n  const mYoY = mlbl(DATA.months[LI-12]), mPrev = mlbl(DATA.months[LI-1]), mCur = mlbl(DATA.months[LI]);\n  return `<thead class="grp"><tr>\n    <th class="firstcol"></th>\n    <th colspan="4">Actuals</th>\n    <th colspan="2">Budget</th>\n    <th colspan="4">Deviation ($)</th>\n    <th colspan="4">Deviation (%)</th>\n  </tr></thead>\n  <thead class="sub"><tr>\n    <th class="firstcol"></th>\n    <th>${mYoY}</th><th>${mPrev}</th><th class="cur">${mCur}</th><th class="cur gend">YTD</th>\n    <th class="cur">${mCur}</th><th class="cur gend">YTD</th>\n    <th>vs ${mPrev}</th><th>vs Presup.</th><th>vs ${mYoY}</th><th class="gend">vs Presup. YTD</th>\n    <th>vs ${mPrev}</th><th>vs Presup.</th><th>vs ${mYoY}</th><th class="gend">vs Presup. YTD</th>\n  </tr></thead>`;\n}\n\nfunction rowLineInner(label, key, trClass){\n  const s = DATA.consolidated_pl[key];\n  const LI = DATA.last_actual_idx;\n  const a = s.actual, b = s.budget;\n  const yoy = LI>=12?a[LI-12]:null, prev = LI>=1?a[LI-1]:null, cur = a[LI];\n  const ytd = sumRange(a, YTD_START, LI);\n  const budCur = b ? b[LI] : null;\n  const budYtd = b ? sumRange(b, YTD_START, LI) : null;\n\n  const devMomD = (cur!=null&&prev!=null)?cur-prev:null;\n  const devBudD = (cur!=null&&budCur!=null)?cur-budCur:null;\n  const devYoyD = (cur!=null&&yoy!=null)?cur-yoy:null;\n  const devYtdD = (ytd!=null&&budYtd!=null)?ytd-budYtd:null;\n  const devMomP = pctDelta(cur,prev), devBudP = pctDelta(cur,budCur), devYoyP = pctDelta(cur,yoy), devYtdP = pctDelta(ytd,budYtd);\n\n  const trc = trClass ? ` class="${trClass}"` : \'\';\n  return `<tr${trc}>\n    <td class="lbl">${label}</td>\n    <td>${fmtMoney(yoy)}</td><td>${fmtMoney(prev)}</td><td class="cur">${fmtMoney(cur)}</td><td class="cur gend">${fmtMoney(ytd)}</td>\n    <td class="cur">${fmtMoney(budCur)}</td><td class="cur gend">${fmtMoney(budYtd)}</td>\n    <td class="${clsSign(devMomD)}">${fmtMoney(devMomD)}</td><td class="${clsSign(devBudD)}">${fmtMoney(devBudD)}</td><td class="${clsSign(devYoyD)}">${fmtMoney(devYoyD)}</td><td class="gend ${clsSign(devYtdD)}">${fmtMoney(devYtdD)}</td>\n    <td class="${clsSign(devMomP)}">${fmtPct(devMomP*100 || null,1)}</td><td class="${clsSign(devBudP)}">${devBudP==null?\'—\':fmtPct(devBudP*100,1)}</td><td class="${clsSign(devYoyP)}">${devYoyP==null?\'—\':fmtPct(devYoyP*100,1)}</td><td class="gend ${clsSign(devYtdP)}">${devYtdP==null?\'—\':fmtPct(devYtdP*100,1)}</td>\n  </tr>`;\n}\nfunction rowLine(label,key){ return rowLineInner(label,key,\'\'); }\nfunction rowSubtot(label,key){ return rowLineInner(label,key,\'subtot\'); }\n\nfunction rowMargin(label, numKey, denKey){\n  const num = DATA.consolidated_pl[numKey], den = DATA.consolidated_pl[denKey];\n  const LI = DATA.last_actual_idx;\n  const a_n=num.actual, a_d=den.actual, b_n=num.budget, b_d=den.budget;\n  const mk=(n,d)=> (n!=null&&d!=null&&d!==0) ? (n/d*100) : null;\n  const yoy = LI>=12?mk(a_n[LI-12],a_d[LI-12]):null;\n  const prev = LI>=1?mk(a_n[LI-1],a_d[LI-1]):null;\n  const cur = mk(a_n[LI],a_d[LI]);\n  const ytdN = sumRange(a_n,YTD_START,LI), ytdD = sumRange(a_d,YTD_START,LI);\n  const ytd = mk(ytdN,ytdD);\n  const budCur = mk(b_n?b_n[LI]:null, b_d?b_d[LI]:null);\n  const budYtdN = b_n?sumRange(b_n,YTD_START,LI):null, budYtdD = b_d?sumRange(b_d,YTD_START,LI):null;\n  const budYtd = mk(budYtdN,budYtdD);\n  const fp=(v)=> v==null ? \'—\' : v.toFixed(1)+\'%\';\n  return `<tr>\n    <td class="lbl italic">${label}</td>\n    <td class="italic">${fp(yoy)}</td><td class="italic">${fp(prev)}</td><td class="cur italic">${fp(cur)}</td><td class="cur gend italic">${fp(ytd)}</td>\n    <td class="cur italic">${fp(budCur)}</td><td class="cur gend italic">${fp(budYtd)}</td>\n    <td class="italic">—</td><td class="italic">—</td><td class="italic">—</td><td class="gend italic">—</td>\n    <td class="italic">—</td><td class="italic">—</td><td class="italic">—</td><td class="gend italic">—</td>\n  </tr>`;\n}\n\nfunction renderReconTable(){\n  const table = document.getElementById(\'reconTable\');\n  const rows = [\n    rowLine(\'Revenues (net of interco)\',\'revenue\'),\n    rowLine(\'COGS + Opex\',\'opex\'),\n    rowSubtot(\'Normalized Gross Profit\',\'gross_profit\'),\n    rowMargin(\'Gross Margin\',\'gross_profit\',\'revenue\'),\n    rowLine(\'SG&amp;A\',\'sga_total\'),\n    rowSubtot(\'Normalized EBITDA\',\'ebitda\'),\n    rowMargin(\'EBITDA Margin\',\'ebitda\',\'revenue\'),\n    rowLine(\'D&amp;A\',\'da\'),\n    rowSubtot(\'EBIT\',\'ebit\'),\n    rowLine(\'Net Interest\',\'interest_expense\'),\n    rowSubtot(\'EBT\',\'ebt\'),\n    rowLine(\'Taxes\',\'taxes\'),\n    rowSubtot(\'Normalized Net Income\',\'net_income\'),\n    rowMargin(\'Net Margin\',\'net_income\',\'revenue\'),\n  ].join(\'\');\n  table.innerHTML = plHeaderRows() + \'<tbody>\' + rows + \'</tbody>\';\n  document.getElementById(\'reconFootnote\').innerHTML =\n    `Cifras en millones de MXN. YTD = acumulado Ene–${mlbl(DATA.months[DATA.last_actual_idx])}. ` +\n    `Suma agregada de DAE + VEMO Impulso + EV Fleets + VCN (sin eliminaciones intercompañía adicionales a las ya reflejadas en cada P&amp;L individual).`;\n}\n\n/* ---------------- init ---------------- */\nfunction computeYtdStart(){\n  const curYear = DATA.months[DATA.last_actual_idx].split(\'-\')[0];\n  const idx = DATA.months.findIndex(m=>m===curYear+\'-01\');\n  return idx>=0 ? idx : 0;\n}\n\ndocument.addEventListener(\'DOMContentLoaded\', ()=>{\n  YTD_START = computeYtdStart();\n  document.getElementById(\'subtitleText\').textContent =\n    `DAE · VEMO Impulso · EV Fleets · VCN — actualizado a ${DATA.generated_month_label}`;\n\n  document.getElementById(\'companies\').innerHTML =\n    Object.keys(DATA.companies).map(renderCompanyBlock).join(\'\');\n\n  Object.keys(DATA.companies).forEach(ck=>{\n    bindCompanyControls(ck);\n    renderTrendChart(ck);\n  });\n\n  renderReconTable();\n\n  const darkToggle = document.getElementById(\'darkToggle\');\n  let dark = false;\n  try{ dark = localStorage.getItem(\'vemo-consolidated-dark\')===\'1\'; }catch(e){}\n  if(dark){ document.body.classList.add(\'dark-mode\'); darkToggle.textContent=\'☀️\'; }\n  darkToggle.addEventListener(\'click\', ()=>{\n    document.body.classList.toggle(\'dark-mode\');\n    const isDark = document.body.classList.contains(\'dark-mode\');\n    darkToggle.textContent = isDark ? \'☀️\' : \'🌙\';\n    try{ localStorage.setItem(\'vemo-consolidated-dark\', isDark?\'1\':\'0\'); }catch(e){}\n    Object.keys(DATA.companies).forEach(ck=>renderTrendChart(ck));\n  });\n});\n'
 
 
 # ---------- 6) armar index.html (un solo archivo autocontenido) ----------

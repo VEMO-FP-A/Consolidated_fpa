@@ -7,8 +7,10 @@ negocio (DAE, VEMO Impulso/LTO, EV Fleets, VCN).
 - **Última actualización de datos:** Julio 2026 (se actualiza a mano volviendo a correr el
   script de extracción cuando los 4 dashboards individuales tengan un mes nuevo).
 - **`index.html` es el único archivo que hace falta abrir** — CSS, JS y datos van todos
-  incrustados ahí adentro. Todo lo demás en esta carpeta (`scripts/`) es solo la herramienta
-  para regenerarlo cada mes; no son páginas para ver.
+  incrustados ahí adentro.
+- **`scripts/build.py` es el único script que hace falta correr** — descarga los 4 dashboards,
+  extrae los datos y regenera `index.html`, todo en un solo comando. `scripts/logos/` son los
+  logos que incrusta.
 
 ## Qué muestra
 
@@ -30,9 +32,9 @@ Financieros, EBT, Impuestos, Utilidad Neta).
 1. Los 4 dashboards de origen (`DAE_BoardD`, `LTO_BoardD`, `EV_BoardD`, `VCN_BoardD` en
    `github.com/VEMO-FP-A`) se actualizan primero con el mes nuevo (flujo normal de cada uno,
    vía `update_dashboard.py`/`.bat`).
-2. Se corre, en orden, `python scripts/build_data.py` (descarga el `index.html` de cada uno,
-   extrae el objeto `const D` embebido y arma `consolidated_data.json`) y luego
-   `python scripts/build.py` (regenera el único `index.html` final, con todo incrustado).
+2. Se corre `python scripts/build.py` — descarga el `index.html` de cada uno, extrae el objeto
+   `const D` embebido, arma `consolidated_data.json` y regenera el `index.html` final, todo en
+   un solo paso.
 3. Se hace commit y push a este repo (rama `main`) — GitHub Pages lo publica solo.
 
 ## Dashboards individuales

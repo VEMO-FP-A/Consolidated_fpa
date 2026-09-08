@@ -52,8 +52,9 @@ def series(d, key, i0, i1):
     return [round(x, 1) for x in arr[i0:i1+1]]
 
 def spark(d, field, budget_field, i0, i1):
-    """monthly actual+budget series for a KPI-card sparkline, same range the
-    source dashboards use (current-year-to-date only, i.e. YTD_START..LAI)"""
+    """monthly actual+budget series for a KPI-card sparkline — full available
+    history (0..LAI), matching the source dashboards' KPI13 cards which use
+    spStart=0 (NOT just current-year YTD)"""
     a = d.get(field)
     b = d.get(budget_field)
     actual = [round(x, 2) if x is not None else None for x in (a[i0:i1+1] if a else [None]*(i1-i0+1))]
@@ -98,10 +99,10 @@ companies['dae'] = {
         'ebitda': series(d, 'ebitda', 0, lai),
     },
     'kpi_charts': {
-        'revenue': spark(d, 'revenue', 'budget_revenue', 12, lai),
-        'ebitda': spark(d, 'ebitda', 'budget_ebitda', 12, lai),
-        'ebitda_margin': spark(d, 'ebitda_margin', 'budget_ebitda_margin', 12, lai),
-        'net_income': spark(d, 'net_income', 'budget_net_income', 12, lai),
+        'revenue': spark(d, 'revenue', 'budget_revenue', 0, lai),
+        'ebitda': spark(d, 'ebitda', 'budget_ebitda', 0, lai),
+        'ebitda_margin': spark(d, 'ebitda_margin', 'budget_ebitda_margin', 0, lai),
+        'net_income': spark(d, 'net_income', 'budget_net_income', 0, lai),
     }
 }
 
@@ -129,10 +130,10 @@ companies['ev'] = {
         'ebitda': series(d, 'ebitda', 0, lai_e),
     },
     'kpi_charts': {
-        'revenue': spark(d, 'revenue', 'budget_revenue', 12, lai_e),
-        'ebitda': spark(d, 'ebitda', 'budget_ebitda', 12, lai_e),
-        'ebitda_margin': spark(d, 'ebitda_margin', 'budget_ebitda_margin', 12, lai_e),
-        'net_income': spark(d, 'net_income', 'budget_net_income', 12, lai_e),
+        'revenue': spark(d, 'revenue', 'budget_revenue', 0, lai_e),
+        'ebitda': spark(d, 'ebitda', 'budget_ebitda', 0, lai_e),
+        'ebitda_margin': spark(d, 'ebitda_margin', 'budget_ebitda_margin', 0, lai_e),
+        'net_income': spark(d, 'net_income', 'budget_net_income', 0, lai_e),
     }
 }
 
@@ -169,10 +170,10 @@ companies['vcn'] = {
         'ebitda': series(d, 'ebitda', 0, lai_v),
     },
     'kpi_charts': {
-        'revenue': spark(d, 'revenue', 'budget_revenue', 12, lai_v),
-        'ebitda': spark(d, 'ebitda', 'budget_ebitda', 12, lai_v),
-        'ebitda_margin': spark(d, 'ebitda_margin', 'budget_ebitda_margin', 12, lai_v),
-        'net_income': spark(d, 'net_income', 'budget_net_income', 12, lai_v),
+        'revenue': spark(d, 'revenue', 'budget_revenue', 0, lai_v),
+        'ebitda': spark(d, 'ebitda', 'budget_ebitda', 0, lai_v),
+        'ebitda_margin': spark(d, 'ebitda_margin', 'budget_ebitda_margin', 0, lai_v),
+        'net_income': spark(d, 'net_income', 'budget_net_income', 0, lai_v),
     }
 }
 
@@ -238,10 +239,10 @@ companies['lto'] = {
         'ebitda': [round((v(d, 'ebt', i) or 0) + (v(d, 'interest_expense', i) or 0) + (v(d, 'da_total', i) or 0), 1) for i in range(0, lai_l+1)],
     },
     'kpi_charts': {
-        'revenue': spark(d, 'net_operating_revenue', 'budget_net_operating_revenue', 12, lai_l),
-        'net_income': spark(d, 'net_income', 'budget_net_income', 12, lai_l),
-        'net_portfolio_board': spark(d, 'net_portfolio_board', 'budget_net_portfolio_board', 12, lai_l),
-        'roe_pct_board': spark(d, 'roe_pct_board', 'budget_roe_pct_board', 12, lai_l),
+        'revenue': spark(d, 'net_operating_revenue', 'budget_net_operating_revenue', 0, lai_l),
+        'net_income': spark(d, 'net_income', 'budget_net_income', 0, lai_l),
+        'net_portfolio_board': spark(d, 'net_portfolio_board', 'budget_net_portfolio_board', 0, lai_l),
+        'roe_pct_board': spark(d, 'roe_pct_board', 'budget_roe_pct_board', 0, lai_l),
     }
 }
 
@@ -255,7 +256,7 @@ with open(os.path.join(ROOT, 'consolidated_data.json'), 'w', encoding='utf-8') a
         'companies': companies,
         'generated_month': gen_month,
         'generated_month_label': gen_label,
-        'spark_months': months[12:lai+1],
+        'spark_months': months[0:lai+1],
     }, f, ensure_ascii=False, indent=1)
 
 print('consolidated_data.json listo. mes mas reciente:', gen_month)

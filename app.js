@@ -150,7 +150,9 @@ function kpiCardHTML(spec, company){
   const momCls = isNegBetter(momVal) ? 'neg' : 'pos';
   const budCls = isNegBetter(budVal) ? 'neg' : 'pos';
   const arrSym = momVal===null ? '' : (momVal>=0 ? '▲' : '▼');
-  const cardCls = (budVal!==null && isNegBetter(budVal)) ? 'amber' : '';
+  // amber left-border: ported verbatim from the source dashboards' KPI13 cards —
+  // triggered by an unfavorable MoM move, NOT by vs-Budget performance
+  const cardCls = isNegBetter(momVal) ? 'amber' : '';
 
   const fmtCardVal = spec.isPct ? fmtPctParen(val) : fmtMm(val);
   const fmtBudVal = spec.isPct ? fmtPctParen(valBud) : fmtMm(valBud);
@@ -163,15 +165,6 @@ function kpiCardHTML(spec, company){
     rangeTxt = fmtRangeVal(mn, spec.isPct) + ' – ' + fmtRangeVal(mx, spec.isPct);
   }
   const dateRangeTxt = mlblShort(months[0]) + ' – ' + mlblShort(months[cur]);
-  const hasBud = budget && budget.some(v => v !== null && v !== undefined && !isNaN(v) && v !== 0);
-  const legendActuals = '<span style="display:inline-flex;align-items:center;gap:5px">' +
-    '<svg width="18" height="6" style="display:block"><line x1="0" y1="3" x2="18" y2="3" stroke="#11ABAB" stroke-width="1.8" stroke-linecap="round"/></svg>' +
-    '<span>Actuals</span></span>';
-  const legendBudget = hasBud ? (
-    '<span style="display:inline-flex;align-items:center;gap:5px">' +
-    '<svg width="18" height="6" style="display:block"><line x1="0" y1="3" x2="18" y2="3" stroke="#1F5454" stroke-width="1.2" stroke-dasharray="4,3" stroke-linecap="round"/></svg>' +
-    '<span>Budget</span></span>'
-  ) : '';
 
   return `<div class="kpi-card ${cardCls}">
     <div class="kpi-l">${spec.label}</div>
@@ -179,7 +172,6 @@ function kpiCardHTML(spec, company){
     <div class="kpi-mom"><span class="arr ${momCls}">${arrSym}</span> <span class="${momCls}">${momTxt}</span> <span style="color:var(--tx3)">vs ${mlblShort(months[prev])}</span></div>
     ${valBud!==null && valBud!==undefined ? `<div class="kpi-bud"><span><span class="lbl">vs Budget</span> ${fmtBudVal}</span><span class="v ${budCls}">${budTxt}</span></div>` : ''}
     <div class="kpi-spark">${sparkline}</div>
-    <div class="kpi-spark-legend">${legendActuals}${legendBudget}</div>
     <div class="kpi-spark-foot"><span>${rangeTxt}</span><span>${dateRangeTxt}</span></div>
   </div>`;
 }

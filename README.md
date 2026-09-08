@@ -25,23 +25,37 @@ Para cada empresa:
   sus KPIs graficar, checkbox de Presupuesto (línea punteada) y Run-Rate (proyección a 3 meses).
 - Botón directo al dashboard completo de esa empresa.
 
-Al final, una sección de **P&L Consolidado** con la suma agregada de las 4 empresas, en el mismo
+Al final, una sección de **Consolidated P&L** con la suma agregada de las 4 empresas, en el mismo
 formato de tabla que usan los P&L de los dashboards individuales (Actuals / Budget / Deviation $ /
 Deviation %), con las líneas: Revenues (net of interco), COGS + Opex, Normalized Gross Profit,
 Gross Margin, SG&A, Normalized EBITDA, EBITDA Margin, D&A, EBIT, Net Interest, EBT, Taxes,
-Normalized Net Income, Net Margin. VEMO Impulso (negocio financiero de leasing) reconstruye su
-EBITDA/EBIT de forma sintética (EBT + Gastos Financieros [+ D&A]) para poder sumarse en la misma
-línea que los demás negocios operativos.
+Normalized Net Income, Net Margin.
+
+Los **Actuals** de esta tabla se leen directamente del archivo oficial
+`VEMO 2026 Consolidated Financials FV.xlsx` (carpeta `2026`, junto a `db bl`), hoja
+**"Board Outputs"**, bloque **"Normalized"** — el mismo P&L consolidado, ya con eliminaciones
+intercompañía, que usa el board. Si ese archivo no está disponible al correr el script (por
+ejemplo desde otra máquina sin el OneDrive sincronizado), cae automáticamente a sumar los P&L de
+los 4 dashboards individuales (sin eliminaciones) y lo indica en el pie de la tabla. El **Budget**
+de esta sección sí es la suma de los 4 dashboards, ya que el archivo oficial no trae presupuesto
+consolidado.
+
+Todo el sitio (incluido este texto en pantalla) está en inglés — el UI de cada tarjeta reproduce
+el formato de los dashboards individuales (etiqueta, valor, variación MoM, VS BUDGET, sparkline
+con Actuals/Budget y rango de fechas).
 
 ## Cómo actualizar
 
 1. Los 4 dashboards de origen (`DAE_BoardD`, `LTO_BoardD`, `EV_BoardD`, `VCN_BoardD` en
    `github.com/VEMO-FP-A`) se actualizan primero con el mes nuevo (flujo normal de cada uno,
-   vía `update_dashboard.py`/`.bat`).
-2. Se corre `python scripts/build.py` — descarga el `index.html` de cada uno, extrae el objeto
-   `const D` embebido, arma `consolidated_data.json` y regenera el `index.html` final, todo en
+   vía `update_dashboard.py`/`.bat`), y el archivo `VEMO 2026 Consolidated Financials FV.xlsx`
+   también debe tener el mes nuevo cargado en su hoja "Board Outputs".
+2. Se corre `python scripts/build.py` (requiere `pip install openpyxl` para leer el Excel) —
+   descarga el `index.html` de cada uno, extrae el objeto `const D` embebido, lee el Consolidated
+   P&L del Excel oficial, arma `consolidated_data.json` y regenera el `index.html` final, todo en
    un solo paso.
-3. Se hace commit y push a este repo (rama `main`) — GitHub Pages lo publica solo.
+3. Se hace commit y push a este repo (rama `main`) — GitHub Pages lo publica solo. Correr
+   `build.py` NO hace push por sí solo.
 
 ## Dashboards individuales
 

@@ -315,9 +315,9 @@ function kpiCardHTML(ki, LI){
     <div class="kpi-mom">${mom!=null
         ? `<span class="arr ${momCls}">${arrow}</span><span class="${momCls}">${fmtDevPct(mom)}</span><span style="color:var(--tx3)">vs ${mlbl(DATA.months[prev!=null?LI-1:LI])}</span>`
         : `<span style="color:var(--tx3)">No prior-month data</span>`}</div>
-    <div class="kpi-bud"><span><span class="lbl">VS BUDGET</span> ${bud!=null?fmtValCard(bud,ki):'n.a.'}</span><span class="v ${budCls}">${bud!=null?fmtDevPct(vsBud):'n.a.'}</span></div>
+    ${budget ? `<div class="kpi-bud"><span><span class="lbl">VS BUDGET</span> ${bud!=null?fmtValCard(bud,ki):'n.a.'}</span><span class="v ${budCls}">${bud!=null?fmtDevPct(vsBud):'n.a.'}</span></div>` : ''}
     <div class="kpi-spark">${sparklineSVG(sparkDataCropped, sparkBudgetCropped)}</div>
-    <div class="kpi-spark-legend"><span class="sw sw-actual"></span>Actuals<span class="sw sw-budget"></span>Budget</div>
+    <div class="kpi-spark-legend"><span class="sw sw-actual"></span>Actuals${budget?'<span class="sw sw-budget"></span>Budget':''}</div>
     <div class="kpi-spark-foot"><span>${rangeTxt}</span><span>${mlbl(DATA.months[startIdx])} – ${mlbl(DATA.months[LI])}</span></div>
   </div>`;
 }

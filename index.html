@@ -138,7 +138,6 @@ footer{text-align:center;font-size:11px;color:var(--tx3);margin-top:40px}
   <div class="section-title-row">
     <div>
       <div class="section-title">Consolidated P&amp;L</div>
-      <div class="section-note">Combined total of VEMO's 4 businesses (VCN, LTO, DAE, EV Fleets), in the same P&amp;L format used by each individual dashboard.</div>
     </div>
   </div>
   <div class="recon-wrap">
@@ -517,11 +516,12 @@ function renderReconTable(){
   ].join('');
   table.innerHTML = plHeaderRows() + '<tbody>' + rows + '</tbody>';
   document.getElementById('reconFootnote').innerHTML =
-    `Figures in millions of MXN. YTD = cumulative Jan–${mlbl(DATA.months[DATA.last_actual_idx])}. ` +
-    `Aggregated total of VCN + LTO + DAE + EV Fleets, net of intercompany eliminations` +
-    (DATA.consolidated_pl_source === 'board_xlsx'
-      ? ' (sourced from the official, board-presented Consolidated P&amp;L in the "Board Outputs" tab).'
-      : ' (approximated as the sum of the 4 dashboards -- official consolidated file not available for this build).');
+    `<b>P&amp;L Managerial Notes:</b> For comparability purposes vs. Budget:` +
+    `<ul style="margin:4px 0 0 16px;padding:0">` +
+    `<li>Certain Revenue, OPEX and SG&amp;A accounts are reclassified vs. accounting figures.</li>` +
+    `<li>For 2026, VCN&rsquo;s results are normalized for the IFRS 16 treatment of hub lease rent. Specifically, we present actual rent expense within OPEX (i.e., not within Depreciation and Interest). This normalization is applied only to hubs whose contractual grace periods have ended, as opposed to the accounting treatment, which recognizes IFRS 16 impacts for hubs already signed even if they are still within the grace period.</li>` +
+    `<li>Excludes FX gain / (loss).</li>` +
+    `</ul>`;
 }
 
 /* ---------------- init ---------------- */

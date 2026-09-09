@@ -162,23 +162,49 @@ MONTHS_EN = ['January','February','March','April','May','June','July','August',
 PL_FIELDS = ['revenue', 'opex', 'gross_profit', 'sga_total', 'ebitda', 'da',
              'ebit', 'interest_expense', 'ebt', 'taxes', 'net_income']
 
-# The official, accounting-approved Consolidated P&L (with real intercompany
-# eliminations) lives in this workbook on the user's OneDrive, sheet
-# "Board Outputs", "Normalized" P&L block (Revenues -> Net income (Normalized)).
-# It has no Budget columns, so Budget stays sourced from the sum of each
-# company's own budget_ fields (see pl_lines() above).
+# The official, board-presented Consolidated P&L lives in this workbook on
+# the user's OneDrive, sheet "Board Outputs" -- the SUMMARY block (not the
+# full monthly series blocks above it), which already carries YoY/MoM/Budget/
+# Budget YTD, exactly the shape our reconciliation table needs.
 BOARD_XLSX_CANDIDATES = [
     os.path.join(ROOT, '..', '..', 'VEMO 2026 Consolidated Financials FV.xlsx'),
 ]
 
+# field -> row label, searched within the presented block (see below)
+BOARD_PRESENTED_LABELS = {
+    'revenue': 'Revenues',
+    'opex': 'Opex',
+    'gross_profit': 'Gross profit',
+    'gross_margin': 'Gross Margin (%)',
+    'sga_total': 'SG&A',
+    'ebitda': 'EBITDA',
+    'ebitda_margin': 'EBITDA Margin (%)',
+    'da': 'D&A',
+    'ebit': 'EBIT',
+    'interest_expense': 'Interest Expense',
+    'ebt': 'EBT',
+    'taxes': 'Taxes',
+    'net_income': 'Net income',
+    'net_margin': 'Net Income Margin (%)',
+}
+MARGIN_FIELDS = {'gross_margin', 'ebitda_margin', 'net_margin'}
+# columns of the presented block, per its own header row (see below)
+BOARD_PRESENTED_COLS = {'yoy': 3, 'prev': 4, 'cur': 5, 'ytd': 6, 'bud_cur': 8, 'bud_ytd': 9}
 
-def extract_consolidated_pl_from_board_xlsx(path, months, lai):
-    """Reads the real Consolidated P&L (actuals only) from the 'Board Outputs'
-    sheet of the official consolidated financials workbook. Locates rows
-    dynamically by label text (robust to rows shifting when the sheet is
-    edited month to month) instead of hardcoded row numbers. Returns None
-    (caller falls back to summing the 4 dashboards) if the file/sheet/labels
-    aren't found -- e.g. running outside the user's OneDrive-synced machine."""
+
+def extract_consolidated_pl_from_board_xlsx(path):
+    """Reads the official, board-presented Consolidated P&L straight from the
+    'Board Outputs' sheet -- the summary block that already has YoY/MoM/vs.
+    Budget/vs. Budget YTD precomputed (not the two monthly-series blocks
+    above it in the same sheet). All 3 blocks share the label 'P&L (MXNm)'
+    in col B, so the presented one is told apart by its header row: its
+    column 8 says literally 'Budget' (the monthly-series blocks have a date
+    there instead). Row lookup is label-based (robust to the sheet being
+    edited month to month), not hardcoded row numbers. Returns a dict of
+    {field: {yoy, prev, cur, ytd, bud_cur, bud_ytd}} per PL_FIELDS entry plus
+    the 3 margin fields (already in percentage-point form), or None (caller
+    falls back to summing the 4 dashboards) if the file/sheet/labels aren't
+    found -- e.g. running outside the user's OneDrive-synced machine."""
     try:
         import openpyxl
     except ImportError:
@@ -192,11 +218,16 @@ def extract_consolidated_pl_from_board_xlsx(path, months, lai):
             return None
         ws = wb['Board Outputs']
 
-        col_for_month = {}
-        for c in range(1, min(ws.max_column, 60) + 1):
-            v = ws.cell(row=6, column=c).value
-            if hasattr(v, 'strftime'):
-                col_for_month[v.strftime('%Y-%m')] = c
+        header_row = None
+        scan_limit = min(ws.max_row, 500)
+        for r in range(1, scan_limit + 1):
+            v = ws.cell(row=r, column=2).value
+            if v is not None and str(v).strip() == 'P&L (MXNm)':
+                c8 = ws.cell(row=r, column=8).value
+                if isinstance(c8, str) and c8.strip().lower().startswith('budget'):
+                    header_row = r  # keep the last match -- the current one
+        if header_row is None:
+            return None
 
         def find_label(target, r0, r1):
             for r in range(r0, r1 + 1):
@@ -205,56 +236,72 @@ def extract_consolidated_pl_from_board_xlsx(path, months, lai):
                     return r
             return None
 
-        scan_limit = min(ws.max_row, 500)
-        candidates = []
-        for r in range(1, scan_limit + 1):
-            v = ws.cell(row=r, column=2).value
-            if v is not None and str(v).strip() == 'Normalized EBITDA':
-                candidates.append(r)
-        ebitda_row = None
-        for cand in candidates:
-            if find_label('Net income (Normalized)', cand + 1, cand + 15):
-                ebitda_row = cand
-                break
-        if ebitda_row is None:
-            return None
-
-        pre_lo, pre_hi = max(1, ebitda_row - 25), ebitda_row - 1
-        post_lo, post_hi = ebitda_row + 1, ebitda_row + 15
-        rows = {
-            'revenue': find_label('Revenues', pre_lo, pre_hi),
-            'opex': find_label('OPEX', pre_lo, pre_hi),
-            'gross_profit': find_label('Gross profit', pre_lo, pre_hi),
-            'sga_total': find_label('Total SG&A', pre_lo, pre_hi),
-            'da': find_label('D&A', post_lo, post_hi),
-            'ebit': find_label('EBIT', post_lo, post_hi),
-            'interest_expense': find_label('Interest Expense', post_lo, post_hi),
-            'ebt': find_label('EBT', post_lo, post_hi),
-            'taxes': find_label('Income taxes', post_lo, post_hi),
-            'net_income': find_label('Net income (Normalized)', post_lo, post_hi),
-        }
-        rows['ebitda'] = ebitda_row
+        lo, hi = header_row + 1, header_row + 20
+        rows = {key: find_label(label, lo, hi) for key, label in BOARD_PRESENTED_LABELS.items()}
         if any(v is None for v in rows.values()):
-            print('Board Outputs: no se pudieron ubicar todas las filas del P&L Normalized -- usando fallback.')
+            print('Board Outputs: no se pudieron ubicar todas las filas del bloque presentado (fila', header_row, ') -- usando fallback.')
             return None
 
-        n = len(months)
         out = {}
         for key, r in rows.items():
-            vals = []
-            for m in months:
-                c = col_for_month.get(m)
-                v = ws.cell(row=r, column=c).value if c else None
-                vals.append(round(v, 2) if isinstance(v, (int, float)) else None)
+            vals = {}
+            for name, c in BOARD_PRESENTED_COLS.items():
+                v = ws.cell(row=r, column=c).value
+                if isinstance(v, (int, float)):
+                    vals[name] = round(v * 100, 4) if key in MARGIN_FIELDS else round(v, 2)
+                else:
+                    vals[name] = None
             out[key] = vals
-        for key in out:
-            for i in range(lai + 1, n):
-                if out[key][i] == 0:
-                    out[key][i] = None
         return out
     except Exception as e:
         print('Error leyendo el Consolidated P&L oficial (usando fallback):', e)
         return None
+
+
+def ytd_start_idx(months, lai):
+    """Espejo de computeYtdStart() en app.js: indice del mes '<anio-en-curso>-01'
+    dentro de `months`, usado como inicio del rango YTD (Jan del ano en curso)."""
+    year = months[lai].split('-')[0]
+    target = f'{year}-01'
+    for i, m in enumerate(months):
+        if m == target:
+            return i
+    return 0
+
+
+def sum_range(arr, i0, i1):
+    vals = [v for v in arr[i0:i1 + 1] if v is not None]
+    return round(sum(vals), 2) if vals else None
+
+
+def scalarize_line(actual, budget, lai, ys):
+    """Reduce un par de series mensuales (actual, budget) al mismo snapshot
+    escalar {yoy, prev, cur, ytd, bud_cur, bud_ytd} que ya entrega el bloque
+    'presentado' del Board Outputs -- usado por el fallback (suma de las 4
+    empresas) para que ambas rutas produzcan el mismo esquema."""
+    yoy = actual[lai - 12] if lai >= 12 else None
+    prev = actual[lai - 1] if lai >= 1 else None
+    cur = actual[lai]
+    ytd = sum_range(actual, ys, lai)
+    bud_cur = budget[lai] if budget else None
+    bud_ytd = sum_range(budget, ys, lai) if budget else None
+    return {'yoy': yoy, 'prev': prev, 'cur': cur, 'ytd': ytd, 'bud_cur': bud_cur, 'bud_ytd': bud_ytd}
+
+
+def scalarize_margin(num_a, den_a, num_b, den_b, lai, ys):
+    """Igual que scalarize_line pero para un margen (numerador/denominador
+    mensuales, actual y budget) -- divide primero en cada uno de los 6 puntos
+    del snapshot (nunca sumando porcentajes), en puntos porcentuales."""
+    def mk(nu, de):
+        return round(nu / de * 100, 4) if (nu is not None and de is not None and de != 0) else None
+
+    yoy = mk(num_a[lai - 12], den_a[lai - 12]) if lai >= 12 else None
+    prev = mk(num_a[lai - 1], den_a[lai - 1]) if lai >= 1 else None
+    cur = mk(num_a[lai], den_a[lai])
+    ytd = mk(sum_range(num_a, ys, lai), sum_range(den_a, ys, lai))
+    bud_cur = mk(num_b[lai], den_b[lai]) if (num_b and den_b) else None
+    bud_ytd = mk(sum_range(num_b, ys, lai), sum_range(den_b, ys, lai)) if (num_b and den_b) else None
+    return {'yoy': yoy, 'prev': prev, 'cur': cur, 'ytd': ytd, 'bud_cur': bud_cur, 'bud_ytd': bud_ytd}
 
 
 def full(d, key, n):
@@ -402,41 +449,53 @@ def _build_companies():
         }
 
     all_lines = {ck: pl_lines(d, ck, n) for ck, d in dsets.items()}
-    # Budget: always the sum of each company's own budget_ fields (no official
-    # consolidated budget source was found).
-    budgets = {}
-    for f in PL_FIELDS:
-        tot_b = [None] * n
-        for ck in dsets:
-            _, b = all_lines[ck][f]
-            for i in range(n):
-                if b[i] is not None:
-                    tot_b[i] = (tot_b[i] or 0) + b[i]
-        budgets[f] = [round(x, 2) if x is not None else None for x in tot_b]
 
-    # Actuals: prefer the official Consolidated P&L (with real eliminations) from
-    # the Board Outputs workbook; fall back to summing the 4 dashboards' own
-    # lines (no eliminations) if that workbook isn't reachable.
+    # Actuals + Budget: prefer the official, board-presented Consolidated P&L
+    # (real eliminations, real consolidated budget) straight from the "Board
+    # Outputs" workbook; fall back to summing the 4 dashboards' own lines (no
+    # eliminations, budget summed from each company) if that workbook isn't
+    # reachable. Either way the result is {field: {yoy, prev, cur, ytd,
+    # bud_cur, bud_ytd}} -- a scalar snapshot, not a monthly series -- since
+    # that's the shape the reconciliation table actually needs.
     board_actuals = None
     for xlsx_path in BOARD_XLSX_CANDIDATES:
-        board_actuals = extract_consolidated_pl_from_board_xlsx(xlsx_path, months, lai)
+        board_actuals = extract_consolidated_pl_from_board_xlsx(xlsx_path)
         if board_actuals is not None:
             break
 
     consolidated_pl_source = 'board_xlsx' if board_actuals is not None else 'summed_fallback'
-    consolidated_pl = {}
-    for f in PL_FIELDS:
-        if board_actuals is not None:
-            actual = board_actuals[f]
-        else:
+    if board_actuals is not None:
+        # Ya viene armado como {field: {yoy, prev, cur, ytd, bud_cur, bud_ytd}}
+        # para los 11 PL_FIELDS + las 3 margenes -- se usa tal cual.
+        consolidated_pl = board_actuals
+    else:
+        ys = ytd_start_idx(months, lai)
+        totals_a, totals_b = {}, {}
+        for f in PL_FIELDS:
             tot_a = [None] * n
+            tot_b = [None] * n
             for ck in dsets:
-                a, _ = all_lines[ck][f]
+                a, b = all_lines[ck][f]
                 for i in range(n):
                     if a[i] is not None:
                         tot_a[i] = (tot_a[i] or 0) + a[i]
-            actual = [round(x, 2) if x is not None else None for x in tot_a]
-        consolidated_pl[f] = {'actual': actual, 'budget': budgets[f]}
+                    if b[i] is not None:
+                        tot_b[i] = (tot_b[i] or 0) + b[i]
+            totals_a[f] = [round(x, 2) if x is not None else None for x in tot_a]
+            totals_b[f] = [round(x, 2) if x is not None else None for x in tot_b]
+
+        consolidated_pl = {}
+        for f in PL_FIELDS:
+            consolidated_pl[f] = scalarize_line(totals_a[f], totals_b[f], lai, ys)
+
+        for mkey, numf, denf in (
+            ('gross_margin', 'gross_profit', 'revenue'),
+            ('ebitda_margin', 'ebitda', 'revenue'),
+            ('net_margin', 'net_income', 'revenue'),
+        ):
+            consolidated_pl[mkey] = scalarize_margin(
+                totals_a[numf], totals_a[denf], totals_b[numf], totals_b[denf], lai, ys
+            )
 
     y, m = months[lai].split('-')
     generated_month_label = f"{MONTHS_EN[int(m)-1]} {y}"
@@ -471,7 +530,7 @@ HTML_TEMPLATE = '<!DOCTYPE html>\n<html lang="es">\n<head>\n<meta charset="UTF-8
 
 
 # ---------- 5) logica de render (se incrusta inline en index.html) ----------
-APP_JS = '/* ===================================================================\n   VEMO — Consolidated Executive Summary — app.js\n   KPI cards, KPI Trend chart and P&L table match the format of the 4\n   individual company dashboards (English throughout).\n   =================================================================== */\n\nlet YTD_START = 0;\nconst charts = {};\n\n/* ---------------- generic formatters ---------------- */\nfunction fmtInt(v){ if(v==null) return \'n.a.\'; return Math.round(v).toLocaleString(\'en-US\'); }\nfunction fmtN(v,d){ if(v==null) return \'n.a.\'; return v.toLocaleString(\'en-US\',{minimumFractionDigits:d,maximumFractionDigits:d}); }\nfunction fmtPct(v,d){ if(v==null) return \'n.a.\'; const s=Math.abs(v).toFixed(d)+\'%\'; return v<0?\'(\'+s+\')\':s; }\nfunction fmtMm(v){ if(v==null) return \'n.a.\'; const m=v/1e6; const s=Math.abs(m).toLocaleString(\'en-US\',{minimumFractionDigits:1,maximumFractionDigits:1}); return m<0?\'(\'+s+\'M)\':s+\'M\'; }\nfunction fmtK(v){ if(v==null) return \'n.a.\'; const k=v/1000; const s=Math.abs(k).toLocaleString(\'en-US\',{minimumFractionDigits:1,maximumFractionDigits:1}); return k<0?\'(\'+s+\'k)\':s+\'k\'; }\nconst MONTHS_EN = [\'Jan\',\'Feb\',\'Mar\',\'Apr\',\'May\',\'Jun\',\'Jul\',\'Aug\',\'Sep\',\'Oct\',\'Nov\',\'Dec\'];\nfunction mlbl(m){\n  if(!m) return \'\';\n  const [y,mo]=m.split(\'-\');\n  return MONTHS_EN[parseInt(mo,10)-1]+\' \'+y.slice(2);\n}\nfunction unitSuffixFor(unit){\n  if(!unit) return \'\';\n  if(unit===\'#\'||unit===\'%\') return \'\';\n  if(/\\$/.test(unit)) return \'\';\n  return unit;\n}\nfunction fmtValCard(v, ki){\n  if(v==null) return \'n.a.\';\n  let s;\n  if(ki.type===\'pct\') return fmtPct(v*100,1);\n  if(ki.type===\'money\'){\n    s = ki.fmt===\'mm\' ? fmtMm(v) : fmtN(v,1);\n    if(/MXN|\\$/.test(ki.unit||\'\')) s=\'$\'+s;\n    return s;\n  }\n  switch(ki.fmt){\n    case \'int\': s=fmtInt(v); break;\n    case \'k\':   s=fmtK(v); break;\n    case \'mm\':  s=fmtMm(v); break;\n    case \'n0\':  s=fmtN(v,0); break;\n    case \'n2\':  s=fmtN(v,2); break;\n    case \'n1\':\n    default:    s=fmtN(v,1);\n  }\n  if(/MXN|\\$/.test(ki.unit||\'\')) s=\'$\'+s;\n  return s;\n}\n/* range-footer formatting: generic magnitude scaling, no currency sign\n   (matches the source dashboards\' KPI13 card footer, e.g. "1.1M - 8.4M"\n   or "1,465 - 2,121") */\nfunction fmtRangeVal(v, isPct){\n  if(v==null || isNaN(v)) return \'\';\n  if(isPct) return (v*100).toFixed(1)+\'%\';\n  const a = Math.abs(v);\n  if(a>=1e9) return (v/1e9).toFixed(1)+\'B\';\n  if(a>=1e6) return (v/1e6).toFixed(1)+\'M\';\n  if(a>=1e3) return Math.round(v).toLocaleString(\'en-US\');\n  return v.toFixed(a<10?2:1);\n}\n\n/* ---------------- sparkline (Actuals solid + Budget dashed) ---------------- */\nfunction sparklineSVG(data, budget, w, h){\n  w = w||180; h = h||44;\n  const budVals = (budget||[]).filter(v=>v!=null && v!==0);\n  const allVals = data.filter(v=>v!=null).concat(budVals);\n  if(allVals.length < 2) return \'\';\n  const min=Math.min(...allVals), max=Math.max(...allVals);\n  const range = (max-min)||1;\n  const n=data.length;\n  const stepX = w/((n-1)||1);\n  function y(v){ return h-2 - ((v-min)/range)*(h-4); }\n\n  const pts=[];\n  data.forEach((v,i)=>{ if(v!=null) pts.push([i*stepX, y(v)]); });\n  if(pts.length<2) return \'\';\n  const linePath = \'M\'+pts.map(p=>p[0].toFixed(1)+\',\'+p[1].toFixed(1)).join(\' L\');\n  const last=pts[pts.length-1], first=pts[0];\n  const areaPath = linePath+` L${last[0].toFixed(1)},${h} L${first[0].toFixed(1)},${h} Z`;\n\n  let budgetPath = \'\';\n  if(budget && budget.length){\n    const bpts=[];\n    budget.forEach((v,i)=>{ if(v!=null && v!==0) bpts.push([i*stepX, y(v)]); });\n    if(bpts.length>=2) budgetPath = \'M\'+bpts.map(p=>p[0].toFixed(1)+\',\'+p[1].toFixed(1)).join(\' L\');\n  }\n\n  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none">\n    <path d="${areaPath}" fill="rgba(123,218,218,0.25)" stroke="none"/>\n    ${budgetPath ? `<path d="${budgetPath}" fill="none" stroke="#1F5454" stroke-width="1.2" stroke-dasharray="3,2" opacity="0.75"/>` : \'\'}\n    <path d="${linePath}" fill="none" stroke="#11ABAB" stroke-width="1.6"/>\n  </svg>`;\n}\n\n/* ---------------- KPI card ---------------- */\nfunction kpiCardHTML(ki, LI){\n  const data = ki.data, spark = ki.spark || ki.data, budget = ki.budget;\n  const cur = data[LI], prev = LI>=1?data[LI-1]:null, yoy = LI>=12?data[LI-12]:null;\n  const mom = (cur!=null && prev!=null && prev!==0) ? (cur-prev)/Math.abs(prev) : null;\n  const bud = budget ? budget[LI] : null;\n  const vsBud = (cur!=null && bud!=null && bud!==0) ? (cur-bud)/Math.abs(bud) : null;\n  const better = ki.better || \'up\';\n  const momGood = mom!=null && ((better===\'up\'&&mom>=0)||(better===\'down\'&&mom<=0));\n  const isAmber = mom!=null && !momGood;\n  const momCls = mom==null ? \'\' : (momGood?\'pos\':\'neg\');\n  const arrow = mom==null ? \'\' : (mom>=0?\'▲\':\'▼\');\n  const budGood = vsBud!=null && ((better===\'up\'&&vsBud>=0)||(better===\'down\'&&vsBud<=0));\n  const budCls = vsBud==null ? \'\' : (budGood?\'pos\':\'neg\');\n  const sparkData = spark.slice(0, LI+1);\n  const sparkBudget = budget ? budget.slice(0, LI+1) : null;\n  // first month with real data (leading zeros were already converted to null\n  // upstream), clamped to the start of the current year -- KPI cards/charts\n  // only show the current year forward, even if the KPI has older history\n  const firstRealIdx = Math.max(0, LI - sparkData.filter(v=>v!=null).length + 1);\n  const startIdx = Math.max(firstRealIdx, YTD_START);\n  const unitSuffix = unitSuffixFor(ki.unit);\n\n  // crop the sparkline itself to the visible range (no blank lead-in for\n  // months without data, and no history before the current year) -- the\n  // SVG\'s x-axis should span only startIdx..LI\n  const sparkDataCropped = sparkData.slice(startIdx);\n  const sparkBudgetCropped = sparkBudget ? sparkBudget.slice(startIdx) : null;\n\n  const rangeVals = sparkDataCropped.filter(v=>v!=null);\n  let rangeTxt = \'\';\n  if(rangeVals.length){\n    const mn = Math.min(...rangeVals), mx = Math.max(...rangeVals);\n    rangeTxt = fmtRangeVal(mn, ki.type===\'pct\') + \' – \' + fmtRangeVal(mx, ki.type===\'pct\');\n  }\n\n  return `<div class="kpi-card${isAmber?\' amber\':\'\'}">\n    <div class="kpi-l">${ki.l}</div>\n    <div class="kpi-v">${fmtValCard(cur,ki)}${unitSuffix?`<span style="font-size:11px;font-weight:600;color:var(--tx3)"> ${unitSuffix}</span>`:\'\'}</div>\n    <div class="kpi-mom">${mom!=null\n        ? `<span class="arr ${momCls}">${arrow}</span><span class="${momCls}">${fmtDevPct(mom)}</span><span style="color:var(--tx3)">vs ${mlbl(DATA.months[prev!=null?LI-1:LI])}</span>`\n        : `<span style="color:var(--tx3)">No prior-month data</span>`}</div>\n    <div class="kpi-bud"><span><span class="lbl">VS BUDGET</span> ${bud!=null?fmtValCard(bud,ki):\'n.a.\'}</span><span class="v ${budCls}">${bud!=null?fmtDevPct(vsBud):\'n.a.\'}</span></div>\n    <div class="kpi-spark">${sparklineSVG(sparkDataCropped, sparkBudgetCropped)}</div>\n    <div class="kpi-spark-legend"><span class="sw sw-actual"></span>Actuals<span class="sw sw-budget"></span>Budget</div>\n    <div class="kpi-spark-foot"><span>${rangeTxt}</span><span>${mlbl(DATA.months[startIdx])} – ${mlbl(DATA.months[LI])}</span></div>\n  </div>`;\n}\n\n/* ---------------- company block ---------------- */\nfunction renderCompanyBlock(ck){\n  const c = DATA.companies[ck];\n  const LI = DATA.last_actual_idx;\n  const cardsHtml = c.kpis.map(ki=>kpiCardHTML(ki,LI)).join(\'\');\n  const optsHtml = c.kpis.map((ki,i)=>`<option value="${i}">${ki.l}</option>`).join(\'\');\n  return `<div class="company-block" id="block-${ck}">\n    <div class="company-head">\n      <div class="company-id">\n        <img class="company-logo" src="${LOGOS[ck]}" alt="${c.name}">\n        <div class="company-names"><div class="cname">${c.name}</div><div class="cfull">${c.full}</div></div>\n      </div>\n      <a class="company-link" href="${c.url}" target="_blank" rel="noopener">Full Dashboard &rarr;</a>\n    </div>\n    <div class="kpi-grid">${cardsHtml}</div>\n    <div class="kpi-trend-bar">\n      <span class="ttl">KPI Trend</span>\n      <select class="kt-picker" data-c="${ck}">${optsHtml}</select>\n      <div class="kpi-trend-ctrls">\n        <label><input type="checkbox" class="kt-bud" data-c="${ck}" checked> Budget</label>\n        <label><input type="checkbox" class="kt-proj" data-c="${ck}"> Run-Rate</label>\n      </div>\n    </div>\n    <div class="kpi-trend-box"><canvas id="chart-${ck}"></canvas></div>\n  </div>`;\n}\n\n/* ---------------- KPI Trend chart (one per company) ---------------- */\nfunction renderTrendChart(ck){\n  const c = DATA.companies[ck];\n  const sel = document.querySelector(`.kt-picker[data-c="${ck}"]`);\n  const showBud = document.querySelector(`.kt-bud[data-c="${ck}"]`).checked;\n  const showProj = document.querySelector(`.kt-proj[data-c="${ck}"]`).checked;\n  const ki = c.kpis[parseInt(sel.value,10)];\n  const LI = DATA.last_actual_idx;\n  const months = DATA.months;\n  let endIdx = Math.min(months.length-1, LI + (showProj?3:0));\n  // crop the x-axis to the range that actually has information for this KPI\n  // -- don\'t show empty months before its first real value, and never show\n  // history before the current year (KPI cards/charts are current-year only;\n  // full history is still kept in the underlying data for the P&L table)\n  let firstRealIdx = 0;\n  for(let i=0;i<=LI;i++){ if(ki.data[i]!=null){ firstRealIdx=i; break; } }\n  let startIdx = Math.max(firstRealIdx, YTD_START);\n  const labels = months.slice(startIdx,endIdx+1).map(mlbl);\n  const mainData = months.slice(startIdx,endIdx+1).map((m,i)=>{ const idx=startIdx+i; return idx<=LI ? ki.data[idx] : null; });\n\n  const datasets = [{\n    label: ki.l, data: mainData,\n    borderColor:\'#11ABAB\', backgroundColor:\'rgba(123,218,218,0.30)\',\n    fill:true, tension:0.32, pointRadius:2.5, pointBackgroundColor:\'#168888\',\n    borderWidth:2, spanGaps:true\n  }];\n\n  if(showBud && ki.budget){\n    const curYear = months[LI].split(\'-\')[0];\n    const budData = months.slice(startIdx,endIdx+1).map((m,i)=>{\n      const idx=startIdx+i;\n      const b = ki.budget[idx];\n      if(b==null || b===0) return null;\n      return m >= curYear+\'-01\' ? b : null;\n    });\n    datasets.push({\n      label: ki.l+\' (Budget)\', data: budData,\n      borderColor:\'#1F5454\', borderDash:[6,4], fill:false,\n      pointRadius:0, borderWidth:1.6, spanGaps:true\n    });\n  }\n\n  if(showProj){\n    const window3 = ki.data.slice(Math.max(0,LI-2), LI+1).filter(v=>v!=null);\n    if(window3.length>=1){\n      const avg = window3.reduce((a,b)=>a+b,0)/window3.length;\n      const projData = months.slice(startIdx,endIdx+1).map((m,i)=>{\n        const idx=startIdx+i;\n        if(idx===LI) return ki.data[LI];\n        if(idx>LI) return avg;\n        return null;\n      });\n      datasets.push({\n        label:\'Run-Rate (3m avg.)\', data: projData,\n        borderColor:\'#7BDADA\', borderDash:[3,3], fill:false,\n        pointRadius:0, borderWidth:1.6, spanGaps:true\n      });\n    }\n  }\n\n  const canvas = document.getElementById(`chart-${ck}`);\n  if(charts[ck]) charts[ck].destroy();\n  charts[ck] = new Chart(canvas, {\n    type:\'line\',\n    data:{labels, datasets},\n    options:{\n      responsive:true, maintainAspectRatio:false,\n      interaction:{mode:\'index\',intersect:false},\n      plugins:{\n        legend:{display: datasets.length>1, position:\'bottom\', labels:{boxWidth:12,font:{size:10}}},\n        tooltip:{callbacks:{label:(ctx)=> `${ctx.dataset.label}: ${fmtValCard(ctx.parsed.y, ki)}`}}\n      },\n      scales:{\n        y:{ ticks:{ callback:(v)=>fmtValCard(v,ki), font:{size:10} }, grid:{color:\'rgba(0,0,0,0.06)\'} },\n        x:{ ticks:{ maxRotation:0, autoSkip:true, font:{size:10} }, grid:{display:false} }\n      }\n    }\n  });\n}\n\nfunction bindCompanyControls(ck){\n  document.querySelector(`.kt-picker[data-c="${ck}"]`).addEventListener(\'change\', ()=>renderTrendChart(ck));\n  document.querySelector(`.kt-bud[data-c="${ck}"]`).addEventListener(\'change\', ()=>renderTrendChart(ck));\n  document.querySelector(`.kt-proj[data-c="${ck}"]`).addEventListener(\'change\', ()=>renderTrendChart(ck));\n}\n\n/* ---------------- P&L Consolidado table ---------------- */\nfunction sumRange(arr,start,end){\n  let s=0, any=false;\n  for(let i=start;i<=end;i++){ if(arr[i]!=null){ s+=arr[i]; any=true; } }\n  return any ? s : null;\n}\nfunction pctDelta(cur,base){\n  if(cur==null||base==null||base===0) return null;\n  return (cur-base)/Math.abs(base);\n}\n/* "not meaningful" guard: a swing off a near-zero base (e.g. EBITDA crossing\n   zero) produces a huge, uninformative percentage -- show "n.m." instead,\n   the standard finance convention */\nfunction fmtDevPct(v){\n  if(v==null) return \'—\';\n  if(Math.abs(v)>9.99) return \'n.m.\';\n  return fmtPct(v*100,1);\n}\nfunction fmtMoney(v){ return v==null ? \'—\' : fmtMm(v); }\nfunction clsSign(v){ if(v==null) return \'\'; return v>0?\'pos\':(v<0?\'neg\':\'\'); }\n\nfunction plHeaderRows(){\n  const LI = DATA.last_actual_idx;\n  const mYoY = mlbl(DATA.months[LI-12]), mPrev = mlbl(DATA.months[LI-1]), mCur = mlbl(DATA.months[LI]);\n  return `<thead class="grp"><tr>\n    <th class="firstcol"></th>\n    <th colspan="4">Actuals</th>\n    <th colspan="2">Budget</th>\n    <th colspan="4">Deviation ($)</th>\n    <th colspan="4">Deviation (%)</th>\n  </tr></thead>\n  <thead class="sub"><tr>\n    <th class="firstcol"></th>\n    <th>${mYoY}</th><th>${mPrev}</th><th class="cur">${mCur}</th><th class="cur gend">YTD</th>\n    <th class="cur">${mCur}</th><th class="cur gend">YTD</th>\n    <th>vs ${mPrev}</th><th>vs Budget</th><th>vs ${mYoY}</th><th class="gend">vs Budget YTD</th>\n    <th>vs ${mPrev}</th><th>vs Budget</th><th>vs ${mYoY}</th><th class="gend">vs Budget YTD</th>\n  </tr></thead>`;\n}\n\nfunction rowLineInner(label, key, trClass){\n  const s = DATA.consolidated_pl[key];\n  const LI = DATA.last_actual_idx;\n  const a = s.actual, b = s.budget;\n  const yoy = LI>=12?a[LI-12]:null, prev = LI>=1?a[LI-1]:null, cur = a[LI];\n  const ytd = sumRange(a, YTD_START, LI);\n  const budCur = b ? b[LI] : null;\n  const budYtd = b ? sumRange(b, YTD_START, LI) : null;\n\n  const devMomD = (cur!=null&&prev!=null)?cur-prev:null;\n  const devBudD = (cur!=null&&budCur!=null)?cur-budCur:null;\n  const devYoyD = (cur!=null&&yoy!=null)?cur-yoy:null;\n  const devYtdD = (ytd!=null&&budYtd!=null)?ytd-budYtd:null;\n  const devMomP = pctDelta(cur,prev), devBudP = pctDelta(cur,budCur), devYoyP = pctDelta(cur,yoy), devYtdP = pctDelta(ytd,budYtd);\n\n  const trc = trClass ? ` class="${trClass}"` : \'\';\n  return `<tr${trc}>\n    <td class="lbl">${label}</td>\n    <td>${fmtMoney(yoy)}</td><td>${fmtMoney(prev)}</td><td class="cur">${fmtMoney(cur)}</td><td class="cur gend">${fmtMoney(ytd)}</td>\n    <td class="cur">${fmtMoney(budCur)}</td><td class="cur gend">${fmtMoney(budYtd)}</td>\n    <td class="${clsSign(devMomD)}">${fmtMoney(devMomD)}</td><td class="${clsSign(devBudD)}">${fmtMoney(devBudD)}</td><td class="${clsSign(devYoyD)}">${fmtMoney(devYoyD)}</td><td class="gend ${clsSign(devYtdD)}">${fmtMoney(devYtdD)}</td>\n    <td class="${clsSign(devMomP)}">${fmtDevPct(devMomP)}</td><td class="${clsSign(devBudP)}">${fmtDevPct(devBudP)}</td><td class="${clsSign(devYoyP)}">${fmtDevPct(devYoyP)}</td><td class="gend ${clsSign(devYtdP)}">${fmtDevPct(devYtdP)}</td>\n  </tr>`;\n}\nfunction rowLine(label,key){ return rowLineInner(label,key,\'\'); }\nfunction rowSubtot(label,key){ return rowLineInner(label,key,\'subtot\'); }\n\nfunction rowMargin(label, numKey, denKey){\n  const num = DATA.consolidated_pl[numKey], den = DATA.consolidated_pl[denKey];\n  const LI = DATA.last_actual_idx;\n  const a_n=num.actual, a_d=den.actual, b_n=num.budget, b_d=den.budget;\n  const mk=(n,d)=> (n!=null&&d!=null&&d!==0) ? (n/d*100) : null;\n  const yoy = LI>=12?mk(a_n[LI-12],a_d[LI-12]):null;\n  const prev = LI>=1?mk(a_n[LI-1],a_d[LI-1]):null;\n  const cur = mk(a_n[LI],a_d[LI]);\n  const ytdN = sumRange(a_n,YTD_START,LI), ytdD = sumRange(a_d,YTD_START,LI);\n  const ytd = mk(ytdN,ytdD);\n  const budCur = mk(b_n?b_n[LI]:null, b_d?b_d[LI]:null);\n  const budYtdN = b_n?sumRange(b_n,YTD_START,LI):null, budYtdD = b_d?sumRange(b_d,YTD_START,LI):null;\n  const budYtd = mk(budYtdN,budYtdD);\n  const fp=(v)=> v==null ? \'—\' : v.toFixed(1)+\'%\';\n  return `<tr>\n    <td class="lbl italic">${label}</td>\n    <td class="italic">${fp(yoy)}</td><td class="italic">${fp(prev)}</td><td class="cur italic">${fp(cur)}</td><td class="cur gend italic">${fp(ytd)}</td>\n    <td class="cur italic">${fp(budCur)}</td><td class="cur gend italic">${fp(budYtd)}</td>\n    <td class="italic"></td><td class="italic"></td><td class="italic"></td><td class="gend italic"></td>\n    <td class="italic"></td><td class="italic"></td><td class="italic"></td><td class="gend italic"></td>\n  </tr>`;\n}\n\nfunction renderReconTable(){\n  const table = document.getElementById(\'reconTable\');\n  const rows = [\n    rowLine(\'Revenues (net of interco)\',\'revenue\'),\n    rowLine(\'COGS + Opex\',\'opex\'),\n    rowSubtot(\'Normalized Gross Profit\',\'gross_profit\'),\n    rowMargin(\'Gross Margin\',\'gross_profit\',\'revenue\'),\n    rowLine(\'SG&amp;A\',\'sga_total\'),\n    rowSubtot(\'Normalized EBITDA\',\'ebitda\'),\n    rowMargin(\'EBITDA Margin\',\'ebitda\',\'revenue\'),\n    rowLine(\'D&amp;A\',\'da\'),\n    rowSubtot(\'EBIT\',\'ebit\'),\n    rowLine(\'Net Interest\',\'interest_expense\'),\n    rowSubtot(\'EBT\',\'ebt\'),\n    rowLine(\'Taxes\',\'taxes\'),\n    rowSubtot(\'Normalized Net Income\',\'net_income\'),\n    rowMargin(\'Net Margin\',\'net_income\',\'revenue\'),\n  ].join(\'\');\n  table.innerHTML = plHeaderRows() + \'<tbody>\' + rows + \'</tbody>\';\n  document.getElementById(\'reconFootnote\').innerHTML =\n    `Figures in millions of MXN. YTD = cumulative Jan–${mlbl(DATA.months[DATA.last_actual_idx])}. ` +\n    `Aggregated total of VCN + LTO + DAE + EV Fleets, net of intercompany eliminations` +\n    (DATA.consolidated_pl_source === \'board_xlsx\'\n      ? \' (sourced from the official Consolidated P&amp;L, "Board Outputs" tab).\'\n      : \' (approximated as the sum of the 4 dashboards -- official consolidated file not available for this build).\');\n}\n\n/* ---------------- init ---------------- */\nfunction computeYtdStart(){\n  const curYear = DATA.months[DATA.last_actual_idx].split(\'-\')[0];\n  const idx = DATA.months.findIndex(m=>m===curYear+\'-01\');\n  return idx>=0 ? idx : 0;\n}\n\ndocument.addEventListener(\'DOMContentLoaded\', ()=>{\n  YTD_START = computeYtdStart();\n  document.getElementById(\'data-through-label\').textContent =\n    `📅 Data through ${DATA.generated_month_label}`;\n\n  document.getElementById(\'companies\').innerHTML =\n    Object.keys(DATA.companies).map(renderCompanyBlock).join(\'\');\n\n  Object.keys(DATA.companies).forEach(ck=>{\n    bindCompanyControls(ck);\n    renderTrendChart(ck);\n  });\n\n  renderReconTable();\n\n  const darkToggle = document.getElementById(\'darkToggle\');\n  let dark = false;\n  try{ dark = localStorage.getItem(\'vemo-consolidated-dark\')===\'1\'; }catch(e){}\n  if(dark){ document.body.classList.add(\'dark-mode\'); darkToggle.textContent=\'☀️\'; }\n  darkToggle.addEventListener(\'click\', ()=>{\n    document.body.classList.toggle(\'dark-mode\');\n    const isDark = document.body.classList.contains(\'dark-mode\');\n    darkToggle.textContent = isDark ? \'☀️\' : \'🌙\';\n    try{ localStorage.setItem(\'vemo-consolidated-dark\', isDark?\'1\':\'0\'); }catch(e){}\n    Object.keys(DATA.companies).forEach(ck=>renderTrendChart(ck));\n  });\n});\n'
+APP_JS = '/* ===================================================================\n   VEMO — Consolidated Executive Summary — app.js\n   KPI cards, KPI Trend chart and P&L table match the format of the 4\n   individual company dashboards (English throughout).\n   =================================================================== */\n\nlet YTD_START = 0;\nconst charts = {};\n\n/* ---------------- generic formatters ---------------- */\nfunction fmtInt(v){ if(v==null) return \'n.a.\'; return Math.round(v).toLocaleString(\'en-US\'); }\nfunction fmtN(v,d){ if(v==null) return \'n.a.\'; return v.toLocaleString(\'en-US\',{minimumFractionDigits:d,maximumFractionDigits:d}); }\nfunction fmtPct(v,d){ if(v==null) return \'n.a.\'; const s=Math.abs(v).toFixed(d)+\'%\'; return v<0?\'(\'+s+\')\':s; }\nfunction fmtMm(v){ if(v==null) return \'n.a.\'; const m=v/1e6; const s=Math.abs(m).toLocaleString(\'en-US\',{minimumFractionDigits:1,maximumFractionDigits:1}); return m<0?\'(\'+s+\'M)\':s+\'M\'; }\nfunction fmtK(v){ if(v==null) return \'n.a.\'; const k=v/1000; const s=Math.abs(k).toLocaleString(\'en-US\',{minimumFractionDigits:1,maximumFractionDigits:1}); return k<0?\'(\'+s+\'k)\':s+\'k\'; }\nconst MONTHS_EN = [\'Jan\',\'Feb\',\'Mar\',\'Apr\',\'May\',\'Jun\',\'Jul\',\'Aug\',\'Sep\',\'Oct\',\'Nov\',\'Dec\'];\nfunction mlbl(m){\n  if(!m) return \'\';\n  const [y,mo]=m.split(\'-\');\n  return MONTHS_EN[parseInt(mo,10)-1]+\' \'+y.slice(2);\n}\nfunction unitSuffixFor(unit){\n  if(!unit) return \'\';\n  if(unit===\'#\'||unit===\'%\') return \'\';\n  if(/\\$/.test(unit)) return \'\';\n  return unit;\n}\nfunction fmtValCard(v, ki){\n  if(v==null) return \'n.a.\';\n  let s;\n  if(ki.type===\'pct\') return fmtPct(v*100,1);\n  if(ki.type===\'money\'){\n    s = ki.fmt===\'mm\' ? fmtMm(v) : fmtN(v,1);\n    if(/MXN|\\$/.test(ki.unit||\'\')) s=\'$\'+s;\n    return s;\n  }\n  switch(ki.fmt){\n    case \'int\': s=fmtInt(v); break;\n    case \'k\':   s=fmtK(v); break;\n    case \'mm\':  s=fmtMm(v); break;\n    case \'n0\':  s=fmtN(v,0); break;\n    case \'n2\':  s=fmtN(v,2); break;\n    case \'n1\':\n    default:    s=fmtN(v,1);\n  }\n  if(/MXN|\\$/.test(ki.unit||\'\')) s=\'$\'+s;\n  return s;\n}\n/* range-footer formatting: generic magnitude scaling, no currency sign\n   (matches the source dashboards\' KPI13 card footer, e.g. "1.1M - 8.4M"\n   or "1,465 - 2,121") */\nfunction fmtRangeVal(v, isPct){\n  if(v==null || isNaN(v)) return \'\';\n  if(isPct) return (v*100).toFixed(1)+\'%\';\n  const a = Math.abs(v);\n  if(a>=1e9) return (v/1e9).toFixed(1)+\'B\';\n  if(a>=1e6) return (v/1e6).toFixed(1)+\'M\';\n  if(a>=1e3) return Math.round(v).toLocaleString(\'en-US\');\n  return v.toFixed(a<10?2:1);\n}\n\n/* ---------------- sparkline (Actuals solid + Budget dashed) ---------------- */\nfunction sparklineSVG(data, budget, w, h){\n  w = w||180; h = h||44;\n  const budVals = (budget||[]).filter(v=>v!=null && v!==0);\n  const allVals = data.filter(v=>v!=null).concat(budVals);\n  if(allVals.length < 2) return \'\';\n  const min=Math.min(...allVals), max=Math.max(...allVals);\n  const range = (max-min)||1;\n  const n=data.length;\n  const stepX = w/((n-1)||1);\n  function y(v){ return h-2 - ((v-min)/range)*(h-4); }\n\n  const pts=[];\n  data.forEach((v,i)=>{ if(v!=null) pts.push([i*stepX, y(v)]); });\n  if(pts.length<2) return \'\';\n  const linePath = \'M\'+pts.map(p=>p[0].toFixed(1)+\',\'+p[1].toFixed(1)).join(\' L\');\n  const last=pts[pts.length-1], first=pts[0];\n  const areaPath = linePath+` L${last[0].toFixed(1)},${h} L${first[0].toFixed(1)},${h} Z`;\n\n  let budgetPath = \'\';\n  if(budget && budget.length){\n    const bpts=[];\n    budget.forEach((v,i)=>{ if(v!=null && v!==0) bpts.push([i*stepX, y(v)]); });\n    if(bpts.length>=2) budgetPath = \'M\'+bpts.map(p=>p[0].toFixed(1)+\',\'+p[1].toFixed(1)).join(\' L\');\n  }\n\n  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none">\n    <path d="${areaPath}" fill="rgba(123,218,218,0.25)" stroke="none"/>\n    ${budgetPath ? `<path d="${budgetPath}" fill="none" stroke="#1F5454" stroke-width="1.2" stroke-dasharray="3,2" opacity="0.75"/>` : \'\'}\n    <path d="${linePath}" fill="none" stroke="#11ABAB" stroke-width="1.6"/>\n  </svg>`;\n}\n\n/* ---------------- KPI card ---------------- */\nfunction kpiCardHTML(ki, LI){\n  const data = ki.data, spark = ki.spark || ki.data, budget = ki.budget;\n  const cur = data[LI], prev = LI>=1?data[LI-1]:null, yoy = LI>=12?data[LI-12]:null;\n  const mom = (cur!=null && prev!=null && prev!==0) ? (cur-prev)/Math.abs(prev) : null;\n  const bud = budget ? budget[LI] : null;\n  const vsBud = (cur!=null && bud!=null && bud!==0) ? (cur-bud)/Math.abs(bud) : null;\n  const better = ki.better || \'up\';\n  const momGood = mom!=null && ((better===\'up\'&&mom>=0)||(better===\'down\'&&mom<=0));\n  const isAmber = mom!=null && !momGood;\n  const momCls = mom==null ? \'\' : (momGood?\'pos\':\'neg\');\n  const arrow = mom==null ? \'\' : (mom>=0?\'▲\':\'▼\');\n  const budGood = vsBud!=null && ((better===\'up\'&&vsBud>=0)||(better===\'down\'&&vsBud<=0));\n  const budCls = vsBud==null ? \'\' : (budGood?\'pos\':\'neg\');\n  const sparkData = spark.slice(0, LI+1);\n  const sparkBudget = budget ? budget.slice(0, LI+1) : null;\n  // first month with real data (leading zeros were already converted to null\n  // upstream), clamped to the start of the current year -- KPI cards/charts\n  // only show the current year forward, even if the KPI has older history\n  const firstRealIdx = Math.max(0, LI - sparkData.filter(v=>v!=null).length + 1);\n  const startIdx = Math.max(firstRealIdx, YTD_START);\n  const unitSuffix = unitSuffixFor(ki.unit);\n\n  // crop the sparkline itself to the visible range (no blank lead-in for\n  // months without data, and no history before the current year) -- the\n  // SVG\'s x-axis should span only startIdx..LI\n  const sparkDataCropped = sparkData.slice(startIdx);\n  const sparkBudgetCropped = sparkBudget ? sparkBudget.slice(startIdx) : null;\n\n  const rangeVals = sparkDataCropped.filter(v=>v!=null);\n  let rangeTxt = \'\';\n  if(rangeVals.length){\n    const mn = Math.min(...rangeVals), mx = Math.max(...rangeVals);\n    rangeTxt = fmtRangeVal(mn, ki.type===\'pct\') + \' – \' + fmtRangeVal(mx, ki.type===\'pct\');\n  }\n\n  return `<div class="kpi-card${isAmber?\' amber\':\'\'}">\n    <div class="kpi-l">${ki.l}</div>\n    <div class="kpi-v">${fmtValCard(cur,ki)}${unitSuffix?`<span style="font-size:11px;font-weight:600;color:var(--tx3)"> ${unitSuffix}</span>`:\'\'}</div>\n    <div class="kpi-mom">${mom!=null\n        ? `<span class="arr ${momCls}">${arrow}</span><span class="${momCls}">${fmtDevPct(mom)}</span><span style="color:var(--tx3)">vs ${mlbl(DATA.months[prev!=null?LI-1:LI])}</span>`\n        : `<span style="color:var(--tx3)">No prior-month data</span>`}</div>\n    <div class="kpi-bud"><span><span class="lbl">VS BUDGET</span> ${bud!=null?fmtValCard(bud,ki):\'n.a.\'}</span><span class="v ${budCls}">${bud!=null?fmtDevPct(vsBud):\'n.a.\'}</span></div>\n    <div class="kpi-spark">${sparklineSVG(sparkDataCropped, sparkBudgetCropped)}</div>\n    <div class="kpi-spark-legend"><span class="sw sw-actual"></span>Actuals<span class="sw sw-budget"></span>Budget</div>\n    <div class="kpi-spark-foot"><span>${rangeTxt}</span><span>${mlbl(DATA.months[startIdx])} – ${mlbl(DATA.months[LI])}</span></div>\n  </div>`;\n}\n\n/* ---------------- company block ---------------- */\nfunction renderCompanyBlock(ck){\n  const c = DATA.companies[ck];\n  const LI = DATA.last_actual_idx;\n  const cardsHtml = c.kpis.map(ki=>kpiCardHTML(ki,LI)).join(\'\');\n  const optsHtml = c.kpis.map((ki,i)=>`<option value="${i}">${ki.l}</option>`).join(\'\');\n  return `<div class="company-block" id="block-${ck}">\n    <div class="company-head">\n      <div class="company-id">\n        <img class="company-logo" src="${LOGOS[ck]}" alt="${c.name}">\n        <div class="company-names"><div class="cname">${c.name}</div><div class="cfull">${c.full}</div></div>\n      </div>\n      <a class="company-link" href="${c.url}" target="_blank" rel="noopener">Full Dashboard &rarr;</a>\n    </div>\n    <div class="kpi-grid">${cardsHtml}</div>\n    <div class="kpi-trend-bar">\n      <span class="ttl">KPI Trend</span>\n      <select class="kt-picker" data-c="${ck}">${optsHtml}</select>\n      <div class="kpi-trend-ctrls">\n        <label><input type="checkbox" class="kt-bud" data-c="${ck}" checked> Budget</label>\n        <label><input type="checkbox" class="kt-proj" data-c="${ck}"> Run-Rate</label>\n      </div>\n    </div>\n    <div class="kpi-trend-box"><canvas id="chart-${ck}"></canvas></div>\n  </div>`;\n}\n\n/* ---------------- KPI Trend chart (one per company) ---------------- */\nfunction renderTrendChart(ck){\n  const c = DATA.companies[ck];\n  const sel = document.querySelector(`.kt-picker[data-c="${ck}"]`);\n  const showBud = document.querySelector(`.kt-bud[data-c="${ck}"]`).checked;\n  const showProj = document.querySelector(`.kt-proj[data-c="${ck}"]`).checked;\n  const ki = c.kpis[parseInt(sel.value,10)];\n  const LI = DATA.last_actual_idx;\n  const months = DATA.months;\n  let endIdx = Math.min(months.length-1, LI + (showProj?3:0));\n  // crop the x-axis to the range that actually has information for this KPI\n  // -- don\'t show empty months before its first real value, and never show\n  // history before the current year (KPI cards/charts are current-year only;\n  // full history is still kept in the underlying data for the P&L table)\n  let firstRealIdx = 0;\n  for(let i=0;i<=LI;i++){ if(ki.data[i]!=null){ firstRealIdx=i; break; } }\n  let startIdx = Math.max(firstRealIdx, YTD_START);\n  const labels = months.slice(startIdx,endIdx+1).map(mlbl);\n  const mainData = months.slice(startIdx,endIdx+1).map((m,i)=>{ const idx=startIdx+i; return idx<=LI ? ki.data[idx] : null; });\n\n  const datasets = [{\n    label: ki.l, data: mainData,\n    borderColor:\'#11ABAB\', backgroundColor:\'rgba(123,218,218,0.30)\',\n    fill:true, tension:0.32, pointRadius:2.5, pointBackgroundColor:\'#168888\',\n    borderWidth:2, spanGaps:true\n  }];\n\n  if(showBud && ki.budget){\n    const curYear = months[LI].split(\'-\')[0];\n    const budData = months.slice(startIdx,endIdx+1).map((m,i)=>{\n      const idx=startIdx+i;\n      const b = ki.budget[idx];\n      if(b==null || b===0) return null;\n      return m >= curYear+\'-01\' ? b : null;\n    });\n    datasets.push({\n      label: ki.l+\' (Budget)\', data: budData,\n      borderColor:\'#1F5454\', borderDash:[6,4], fill:false,\n      pointRadius:0, borderWidth:1.6, spanGaps:true\n    });\n  }\n\n  if(showProj){\n    const window3 = ki.data.slice(Math.max(0,LI-2), LI+1).filter(v=>v!=null);\n    if(window3.length>=1){\n      const avg = window3.reduce((a,b)=>a+b,0)/window3.length;\n      const projData = months.slice(startIdx,endIdx+1).map((m,i)=>{\n        const idx=startIdx+i;\n        if(idx===LI) return ki.data[LI];\n        if(idx>LI) return avg;\n        return null;\n      });\n      datasets.push({\n        label:\'Run-Rate (3m avg.)\', data: projData,\n        borderColor:\'#7BDADA\', borderDash:[3,3], fill:false,\n        pointRadius:0, borderWidth:1.6, spanGaps:true\n      });\n    }\n  }\n\n  const canvas = document.getElementById(`chart-${ck}`);\n  if(charts[ck]) charts[ck].destroy();\n  charts[ck] = new Chart(canvas, {\n    type:\'line\',\n    data:{labels, datasets},\n    options:{\n      responsive:true, maintainAspectRatio:false,\n      interaction:{mode:\'index\',intersect:false},\n      plugins:{\n        legend:{display: datasets.length>1, position:\'bottom\', labels:{boxWidth:12,font:{size:10}}},\n        tooltip:{callbacks:{label:(ctx)=> `${ctx.dataset.label}: ${fmtValCard(ctx.parsed.y, ki)}`}}\n      },\n      scales:{\n        y:{ ticks:{ callback:(v)=>fmtValCard(v,ki), font:{size:10} }, grid:{color:\'rgba(0,0,0,0.06)\'} },\n        x:{ ticks:{ maxRotation:0, autoSkip:true, font:{size:10} }, grid:{display:false} }\n      }\n    }\n  });\n}\n\nfunction bindCompanyControls(ck){\n  document.querySelector(`.kt-picker[data-c="${ck}"]`).addEventListener(\'change\', ()=>renderTrendChart(ck));\n  document.querySelector(`.kt-bud[data-c="${ck}"]`).addEventListener(\'change\', ()=>renderTrendChart(ck));\n  document.querySelector(`.kt-proj[data-c="${ck}"]`).addEventListener(\'change\', ()=>renderTrendChart(ck));\n}\n\n/* ---------------- P&L Consolidado table ---------------- */\nfunction sumRange(arr,start,end){\n  let s=0, any=false;\n  for(let i=start;i<=end;i++){ if(arr[i]!=null){ s+=arr[i]; any=true; } }\n  return any ? s : null;\n}\nfunction pctDelta(cur,base){\n  if(cur==null||base==null||base===0) return null;\n  return (cur-base)/Math.abs(base);\n}\n/* "not meaningful" guard: a swing off a near-zero base (e.g. EBITDA crossing\n   zero) produces a huge, uninformative percentage -- show "n.m." instead,\n   the standard finance convention */\nfunction fmtDevPct(v){\n  if(v==null) return \'—\';\n  if(Math.abs(v)>9.99) return \'n.m.\';\n  return fmtPct(v*100,1);\n}\nfunction fmtMoney(v){ return v==null ? \'—\' : fmtMm(v); }\nfunction clsSign(v){ if(v==null) return \'\'; return v>0?\'pos\':(v<0?\'neg\':\'\'); }\n\nfunction plHeaderRows(){\n  const LI = DATA.last_actual_idx;\n  const mYoY = mlbl(DATA.months[LI-12]), mPrev = mlbl(DATA.months[LI-1]), mCur = mlbl(DATA.months[LI]);\n  return `<thead class="grp"><tr>\n    <th class="firstcol"></th>\n    <th colspan="4">Actuals</th>\n    <th colspan="2">Budget</th>\n    <th colspan="4">Deviation ($)</th>\n    <th colspan="4">Deviation (%)</th>\n  </tr></thead>\n  <thead class="sub"><tr>\n    <th class="firstcol"></th>\n    <th>${mYoY}</th><th>${mPrev}</th><th class="cur">${mCur}</th><th class="cur gend">YTD</th>\n    <th class="cur">${mCur}</th><th class="cur gend">YTD</th>\n    <th>vs ${mPrev}</th><th>vs Budget</th><th>vs ${mYoY}</th><th class="gend">vs Budget YTD</th>\n    <th>vs ${mPrev}</th><th>vs Budget</th><th>vs ${mYoY}</th><th class="gend">vs Budget YTD</th>\n  </tr></thead>`;\n}\n\nfunction rowLineInner(label, key, trClass){\n  // DATA.consolidated_pl[key] is a precomputed scalar snapshot -- either read\n  // straight from the official "Board Outputs" presented block, or reduced\n  // to the same shape from the summed-4-companies fallback in build.py.\n  const s = DATA.consolidated_pl[key];\n  const yoy = s.yoy, prev = s.prev, cur = s.cur, ytd = s.ytd;\n  const budCur = s.bud_cur, budYtd = s.bud_ytd;\n\n  const devMomD = (cur!=null&&prev!=null)?cur-prev:null;\n  const devBudD = (cur!=null&&budCur!=null)?cur-budCur:null;\n  const devYoyD = (cur!=null&&yoy!=null)?cur-yoy:null;\n  const devYtdD = (ytd!=null&&budYtd!=null)?ytd-budYtd:null;\n  const devMomP = pctDelta(cur,prev), devBudP = pctDelta(cur,budCur), devYoyP = pctDelta(cur,yoy), devYtdP = pctDelta(ytd,budYtd);\n\n  const trc = trClass ? ` class="${trClass}"` : \'\';\n  return `<tr${trc}>\n    <td class="lbl">${label}</td>\n    <td>${fmtMoney(yoy)}</td><td>${fmtMoney(prev)}</td><td class="cur">${fmtMoney(cur)}</td><td class="cur gend">${fmtMoney(ytd)}</td>\n    <td class="cur">${fmtMoney(budCur)}</td><td class="cur gend">${fmtMoney(budYtd)}</td>\n    <td class="${clsSign(devMomD)}">${fmtMoney(devMomD)}</td><td class="${clsSign(devBudD)}">${fmtMoney(devBudD)}</td><td class="${clsSign(devYoyD)}">${fmtMoney(devYoyD)}</td><td class="gend ${clsSign(devYtdD)}">${fmtMoney(devYtdD)}</td>\n    <td class="${clsSign(devMomP)}">${fmtDevPct(devMomP)}</td><td class="${clsSign(devBudP)}">${fmtDevPct(devBudP)}</td><td class="${clsSign(devYoyP)}">${fmtDevPct(devYoyP)}</td><td class="gend ${clsSign(devYtdP)}">${fmtDevPct(devYtdP)}</td>\n  </tr>`;\n}\nfunction rowLine(label,key){ return rowLineInner(label,key,\'\'); }\nfunction rowSubtot(label,key){ return rowLineInner(label,key,\'subtot\'); }\n\nfunction rowMargin(label, marginKey){\n  // Margins are precomputed percentage-point scalars -- either read directly\n  // from the official Board Outputs block, or computed the same way (num/den\n  // at each of the 6 snapshot points, never by dividing summed percentages)\n  // in the summed-4-companies fallback in build.py.\n  const s = DATA.consolidated_pl[marginKey];\n  const yoy = s.yoy, prev = s.prev, cur = s.cur, ytd = s.ytd, budCur = s.bud_cur, budYtd = s.bud_ytd;\n  const fp=(v)=> v==null ? \'—\' : v.toFixed(1)+\'%\';\n  return `<tr>\n    <td class="lbl italic">${label}</td>\n    <td class="italic">${fp(yoy)}</td><td class="italic">${fp(prev)}</td><td class="cur italic">${fp(cur)}</td><td class="cur gend italic">${fp(ytd)}</td>\n    <td class="cur italic">${fp(budCur)}</td><td class="cur gend italic">${fp(budYtd)}</td>\n    <td class="italic"></td><td class="italic"></td><td class="italic"></td><td class="gend italic"></td>\n    <td class="italic"></td><td class="italic"></td><td class="italic"></td><td class="gend italic"></td>\n  </tr>`;\n}\n\nfunction renderReconTable(){\n  const table = document.getElementById(\'reconTable\');\n  const rows = [\n    rowLine(\'Revenues (net of interco)\',\'revenue\'),\n    rowLine(\'COGS + Opex\',\'opex\'),\n    rowSubtot(\'Normalized Gross Profit\',\'gross_profit\'),\n    rowMargin(\'Gross Margin\',\'gross_margin\'),\n    rowLine(\'SG&amp;A\',\'sga_total\'),\n    rowSubtot(\'Normalized EBITDA\',\'ebitda\'),\n    rowMargin(\'EBITDA Margin\',\'ebitda_margin\'),\n    rowLine(\'D&amp;A\',\'da\'),\n    rowSubtot(\'EBIT\',\'ebit\'),\n    rowLine(\'Net Interest\',\'interest_expense\'),\n    rowSubtot(\'EBT\',\'ebt\'),\n    rowLine(\'Taxes\',\'taxes\'),\n    rowSubtot(\'Normalized Net Income\',\'net_income\'),\n    rowMargin(\'Net Margin\',\'net_margin\'),\n  ].join(\'\');\n  table.innerHTML = plHeaderRows() + \'<tbody>\' + rows + \'</tbody>\';\n  document.getElementById(\'reconFootnote\').innerHTML =\n    `Figures in millions of MXN. YTD = cumulative Jan–${mlbl(DATA.months[DATA.last_actual_idx])}. ` +\n    `Aggregated total of VCN + LTO + DAE + EV Fleets, net of intercompany eliminations` +\n    (DATA.consolidated_pl_source === \'board_xlsx\'\n      ? \' (sourced from the official, board-presented Consolidated P&amp;L in the "Board Outputs" tab).\'\n      : \' (approximated as the sum of the 4 dashboards -- official consolidated file not available for this build).\');\n}\n\n/* ---------------- init ---------------- */\nfunction computeYtdStart(){\n  const curYear = DATA.months[DATA.last_actual_idx].split(\'-\')[0];\n  const idx = DATA.months.findIndex(m=>m===curYear+\'-01\');\n  return idx>=0 ? idx : 0;\n}\n\ndocument.addEventListener(\'DOMContentLoaded\', ()=>{\n  YTD_START = computeYtdStart();\n  document.getElementById(\'data-through-label\').textContent =\n    `📅 Data through ${DATA.generated_month_label}`;\n\n  document.getElementById(\'companies\').innerHTML =\n    Object.keys(DATA.companies).map(renderCompanyBlock).join(\'\');\n\n  Object.keys(DATA.companies).forEach(ck=>{\n    bindCompanyControls(ck);\n    renderTrendChart(ck);\n  });\n\n  renderReconTable();\n\n  const darkToggle = document.getElementById(\'darkToggle\');\n  let dark = false;\n  try{ dark = localStorage.getItem(\'vemo-consolidated-dark\')===\'1\'; }catch(e){}\n  if(dark){ document.body.classList.add(\'dark-mode\'); darkToggle.textContent=\'☀️\'; }\n  darkToggle.addEventListener(\'click\', ()=>{\n    document.body.classList.toggle(\'dark-mode\');\n    const isDark = document.body.classList.contains(\'dark-mode\');\n    darkToggle.textContent = isDark ? \'☀️\' : \'🌙\';\n    try{ localStorage.setItem(\'vemo-consolidated-dark\', isDark?\'1\':\'0\'); }catch(e){}\n    Object.keys(DATA.companies).forEach(ck=>renderTrendChart(ck));\n  });\n});\n'
 
 
 # ---------- 6) armar index.html (un solo archivo autocontenido) ----------

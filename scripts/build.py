@@ -74,6 +74,184 @@ def extract_D(path):
     return json.loads(raw)
 
 
+# ---------- 1b) extraer el arreglo `const KPI13=[...]` embebido en cada
+# dashboard fuente -- ASI la lista de tarjetas KPI de cada empresa se lee
+# EN CADA BUILD del propio dashboard (no de una copia estatica): si alguien
+# agrega, renombra o quita un KPI en su Executive Summary, el proximo
+# `python build.py` del consolidado lo recoge solo. KPI13 no es JSON valido
+# (keys sin comillas, strings con comilla simple) asi que se usa un parser
+# minimo para ese literal JS restringido en vez de json.loads. ----------
+
+def _parse_js_literal(text):
+    """Parser minimo para el subconjunto de sintaxis JS usado en KPI13:
+    objetos/arreglos anidados, strings con comilla simple o doble,
+    true/false/null, numeros, y keys de objeto sin comillas. No es un
+    parser de JS general -- solo alcanza para estos arreglos de config
+    chicos y escritos a mano."""
+    i = 0
+    n = len(text)
+
+    def skip_ws():
+        # also skips // line comments and /* block */ comments -- some
+        # dashboards' KPI13 arrays carry a leading explanatory comment
+        nonlocal i
+        while i < n:
+            if text[i].isspace():
+                i += 1
+            elif text[i:i + 2] == '//':
+                while i < n and ord(text[i]) != 10:  # 10 = newline
+                    i += 1
+            elif text[i:i + 2] == '/*':
+                end = text.find('*/', i + 2)
+                i = end + 2 if end != -1 else n
+            else:
+                break
+
+    def parse_string():
+        nonlocal i
+        quote = text[i]
+        i += 1
+        out = []
+        while text[i] != quote:
+            if ord(text[i]) == 92:  # backslash escape (avoids literal '' here -- see note below)
+                out.append(text[i + 1])
+                i += 2
+            else:
+                out.append(text[i])
+                i += 1
+        i += 1
+        return ''.join(out)
+
+    def parse_number():
+        nonlocal i
+        start = i
+        while i < n and (text[i].isdigit() or text[i] in '+-.eE'):
+            i += 1
+        raw = text[start:i]
+        return float(raw) if ('.' in raw or 'e' in raw.lower()) else int(raw)
+
+    def parse_key():
+        nonlocal i
+        skip_ws()
+        if text[i] in ('"', "'"):
+            return parse_string()
+        start = i
+        while i < n and (text[i].isalnum() or text[i] == '_'):
+            i += 1
+        return text[start:i]
+
+    def parse_value():
+        nonlocal i
+        skip_ws()
+        c = text[i]
+        if c == '{':
+            return parse_object()
+        if c == '[':
+            return parse_array()
+        if c in ("'", '"'):
+            return parse_string()
+        if text[i:i + 4] == 'true':
+            i += 4
+            return True
+        if text[i:i + 5] == 'false':
+            i += 5
+            return False
+        if text[i:i + 4] == 'null':
+            i += 4
+            return None
+        return parse_number()
+
+    def parse_object():
+        nonlocal i
+        i += 1
+        obj = {}
+        skip_ws()
+        while text[i] != '}':
+            key = parse_key()
+            skip_ws()
+            i += 1  # ':'
+            obj[key] = parse_value()
+            skip_ws()
+            if text[i] == ',':
+                i += 1
+                skip_ws()
+        i += 1
+        return obj
+
+    def parse_array():
+        nonlocal i
+        i += 1
+        arr = []
+        skip_ws()
+        while text[i] != ']':
+            arr.append(parse_value())
+            skip_ws()
+            if text[i] == ',':
+                i += 1
+                skip_ws()
+        i += 1
+        return arr
+
+    return parse_value()
+
+
+def extract_kpi13(path):
+    """Lee `const KPI13=[...]` directamente del HTML descargado de cada
+    dashboard fuente (fresco en cada build) y lo normaliza al esquema que
+    usa resolve_kpi() (l/keys/unit/type/fmt/better/add). Devuelve None si
+    no se encuentra o si el parseo falla -- el llamador cae de vuelta al
+    KPI_DEFS estatico (kpi_defs.py) en ese caso."""
+    try:
+        with open(path, encoding='utf-8') as f:
+            content = f.read()
+        idx = content.find('const KPI13=')
+        if idx == -1:
+            idx = content.find('const KPI13 =')
+        if idx == -1:
+            return None
+        start = content.find('[', idx)
+        depth = 0
+        i = start
+        in_str = False
+        quote = None
+        while i < len(content):
+            c = content[i]
+            if in_str:
+                if ord(c) == 92:  # backslash escape
+                    i += 1
+                elif c == quote:
+                    in_str = False
+            else:
+                if c in ("'", '"'):
+                    in_str = True
+                    quote = c
+                elif c == '[':
+                    depth += 1
+                elif c == ']':
+                    depth -= 1
+                    if depth == 0:
+                        i += 1
+                        break
+            i += 1
+        raw = _parse_js_literal(content[start:i])
+        out = []
+        for entry in raw:
+            item = {
+                'l': entry.get('l'), 'keys': entry.get('keys'),
+                'unit': entry.get('unit'), 'type': entry.get('type'),
+                'better': entry.get('better'),
+            }
+            if 'fmt' in entry:
+                item['fmt'] = entry['fmt']
+            if 'add' in entry:
+                item['add'] = entry['add']
+            out.append(item)
+        return out if out else None
+    except Exception as e:
+        print('  (no se pudo leer KPI13 de', path, '-- usando KPI_DEFS estatico:', e, ')')
+        return None
+
+
 # ---------- 2) descargar los 4 dashboards fuente ----------
 def fetch(name, url):
     os.makedirs(CACHE, exist_ok=True)
@@ -444,7 +622,15 @@ def _build_companies():
     companies = {}
     for ck, d in dsets.items():
         meta = COMPANIES_META[ck]
-        kpis = [resolve_kpi(d, ki, n) for ki in KPI_DEFS[ck]]
+        # KPI list: prefer parsing the freshly-downloaded dashboard's own
+        # KPI13 array (so a KPI added/renamed/removed there shows up here
+        # automatically on the next build); fall back to the static
+        # KPI_DEFS snapshot (kpi_defs.py) only if that extraction fails.
+        kpi_defs_live = extract_kpi13(os.path.join(CACHE, f"{meta['file']}.html"))
+        kpi_defs_ck = kpi_defs_live if kpi_defs_live is not None else KPI_DEFS[ck]
+        if kpi_defs_live is None:
+            print('  KPI13 de', ck, 'no se pudo leer del dashboard -- usando KPI_DEFS estatico (puede estar desactualizado).')
+        kpis = [resolve_kpi(d, ki, n) for ki in kpi_defs_ck]
         companies[ck] = {
             'name': meta['name'], 'full': meta['full'], 'url': meta['url'],
             'kpis': kpis,

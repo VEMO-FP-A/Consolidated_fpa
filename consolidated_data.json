@@ -25,9 +25,9 @@
   "2026-11",
   "2026-12"
  ],
- "last_actual_idx": 19,
- "generated_month": "2026-08",
- "generated_month_label": "August 2026",
+ "last_actual_idx": 18,
+ "generated_month": "2026-07",
+ "generated_month_label": "July 2026",
  "companies": {
   "vcn": {
    "name": "VCN",
@@ -3365,5 +3365,49 @@
    "bud_cur": 255900000.0,
    "bud_ytd": 255900000.0
   }
+ },
+ "ebitda_bridge": {
+  "budget": 7522211.43,
+  "actual": -27357099.48,
+  "steps": [
+   {
+    "label": "DAE",
+    "value": 7784784.140099995,
+    "group": "rev"
+   },
+   {
+    "label": "VCN",
+    "value": -3632929.218800001,
+    "group": "rev"
+   },
+   {
+    "label": "EVF",
+    "value": -6791408.128900001,
+    "group": "rev"
+   },
+   {
+    "label": "LTO",
+    "value": -15799833.631700002,
+    "group": "rev"
+   },
+   {
+    "label": "Non-Operating + Interco Adj",
+    "value": -820031.0707000047,
+    "group": "rev"
+   },
+   {
+    "label": "COGS + OPEX",
+    "value": -14273403.950000003,
+    "group": "cost"
+   },
+   {
+    "label": "SG&A",
+    "value": -1346489.039999999,
+    "group": "cost"
+   }
+  ],
+  "revenue_delta": -19259417.91000001,
+  "opex_delta": -14273403.950000003,
+  "sga_delta": -1346489.039999999
  }
 }

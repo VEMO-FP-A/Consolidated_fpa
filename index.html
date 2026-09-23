@@ -324,7 +324,9 @@ function fmtValCard(v, ki){
   }
   switch(ki.fmt){
     case 'int': s=fmtInt(v); break;
-    case 'k':   s=fmtK(v); break;
+    // Los 4 dashboards fuente imprimen fmt:'k' como el entero con separadores
+    // de miles (390,852), no como "390.9k".
+    case 'k':   s=Math.round(v).toLocaleString('en-US'); break;
     case 'mm':  s=fmtMm(v); break;
     case 'n0':  s=fmtN(v,0); break;
     case 'n2':  s=fmtN(v,2); break;
@@ -427,6 +429,7 @@ function kpiCardHTML(ki, LI){
   // SVG's x-axis should span only startIdx..LI
   const sparkDataCropped = sparkData.slice(startIdx);
   const sparkBudgetCropped = sparkBudget ? sparkBudget.slice(startIdx) : null;
+  const hasBudSeries = !!(sparkBudgetCropped && sparkBudgetCropped.some(v=>v!=null && !isNaN(v) && v!==0));
 
   const rangeVals = sparkDataCropped.filter(v=>v!=null);
   let rangeTxt = '';
@@ -441,9 +444,9 @@ function kpiCardHTML(ki, LI){
     <div class="kpi-mom">${momPrimary!=null
         ? `<span class="arr ${momCls}">${arrow}</span><span class="${momCls}">${momTxt}</span><span style="color:var(--tx3)">vs ${mlbl(DATA.months[LI-1])}</span>`
         : `<span style="color:var(--tx3)">No prior-month data</span>`}</div>
-    ${budget ? `<div class="kpi-bud"><span><span class="lbl">VS BUDGET</span> ${bud!=null?fmtValCard(bud,ki):'n.a.'}</span><span class="v ${budCls}">${budTxt}</span></div>` : ''}
+    ${bud ? `<div class="kpi-bud"><span><span class="lbl">VS BUDGET</span> ${fmtValCard(bud,ki)}</span><span class="v ${budCls}">${budTxt}</span></div>` : ''}
     <div class="kpi-spark">${sparklineSVG(sparkDataCropped, sparkBudgetCropped)}</div>
-    <div class="kpi-spark-legend"><span class="sw sw-actual"></span>Actuals${budget?'<span class="sw sw-budget"></span>Budget':''}</div>
+    <div class="kpi-spark-legend"><span class="sw sw-actual"></span>Actuals${hasBudSeries?'<span class="sw sw-budget"></span>Budget':''}</div>
     <div class="kpi-spark-foot"><span>${rangeTxt}</span><span>${mlbl(DATA.months[startIdx])} – ${mlbl(DATA.months[LI])}</span></div>
   </div>`;
 }

@@ -1007,6 +1007,9 @@ function computeYtdStart(){
 
 document.addEventListener('DOMContentLoaded', ()=>{
   YTD_START = computeYtdStart();
+  // Primero de todo: si alguna fuente no esta en el mes reportado, el aviso
+  // se pinta aunque algo mas abajo truene (p.ej. si Chart.js no cargo).
+  try{ renderDataFreshness(); }catch(e){ console.error('data freshness panel', e); }
   document.getElementById('data-through-label').textContent =
     `📅 Data through ${DATA.generated_month_label}`;
 
@@ -1018,7 +1021,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
     renderTrendChart(ck);
   });
 
-  renderDataFreshness();
   renderCashFlowTable();
   renderPlBridgeGrid();
   renderEbitdaBridge();

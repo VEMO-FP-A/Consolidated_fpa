@@ -287,6 +287,13 @@ function mlbl(m){
   const [y,mo]=m.split('-');
   return MONTHS_EN[parseInt(mo,10)-1]+' '+y.slice(2);
 }
+// Igual que mlbl pero con el anio completo ("Aug 2025"), que es como los
+// encabezados vienen rotulados en el board deck.
+function mlbl4(m){
+  if(!m) return '';
+  const [y,mo]=m.split('-');
+  return MONTHS_EN[parseInt(mo,10)-1]+' '+y;
+}
 function unitSuffixFor(unit){
   if(!unit) return '';
   if(unit==='#'||unit==='%') return '';
@@ -761,8 +768,12 @@ function renderEbitdaBridge(){
 }
 
 function plHeaderRows(){
+  // Encabezados rotulados igual que el board deck: meses con anio completo,
+  // "YTD <anio>", y las desviaciones como YoY / MoM / vs. Budget / vs. Budget (YTD),
+  // en ESE orden (el deck no las pone en el orden en que se calculan).
   const LI = DATA.last_actual_idx;
-  const mYoY = mlbl(DATA.months[LI-12]), mPrev = mlbl(DATA.months[LI-1]), mCur = mlbl(DATA.months[LI]);
+  const mYoY = mlbl4(DATA.months[LI-12]), mPrev = mlbl4(DATA.months[LI-1]), mCur = mlbl4(DATA.months[LI]);
+  const yCur = (DATA.months[LI]||'').split('-')[0];
   return `<thead class="grp"><tr>
     <th class="firstcol"></th>
     <th colspan="4">Actuals</th>
@@ -772,10 +783,10 @@ function plHeaderRows(){
   </tr></thead>
   <thead class="sub"><tr>
     <th class="firstcol"></th>
-    <th>${mYoY}</th><th>${mPrev}</th><th class="cur">${mCur}</th><th class="cur gend">YTD</th>
-    <th class="cur">${mCur}</th><th class="cur gend">YTD</th>
-    <th>vs ${mPrev}</th><th>vs Budget</th><th>vs ${mYoY}</th><th class="gend">vs Budget YTD</th>
-    <th>vs ${mPrev}</th><th>vs Budget</th><th>vs ${mYoY}</th><th class="gend">vs Budget YTD</th>
+    <th>${mYoY}</th><th>${mPrev}</th><th class="cur">${mCur}</th><th class="cur gend">YTD ${yCur}</th>
+    <th class="cur">${mCur}</th><th class="cur gend">YTD ${yCur}</th>
+    <th>YoY</th><th>MoM</th><th>vs. Budget</th><th class="gend">vs. Budget (YTD)</th>
+    <th>YoY</th><th>MoM</th><th>vs. Budget</th><th class="gend">vs. Budget (YTD)</th>
   </tr></thead>`;
 }
 
@@ -798,8 +809,8 @@ function rowLineInner(label, key, trClass){
     <td class="lbl">${label}</td>
     <td>${fmtMoney(yoy)}</td><td>${fmtMoney(prev)}</td><td class="cur">${fmtMoney(cur)}</td><td class="cur gend">${fmtMoney(ytd)}</td>
     <td class="cur">${fmtMoney(budCur)}</td><td class="cur gend">${fmtMoney(budYtd)}</td>
-    <td class="${clsSign(devMomD)}">${fmtMoney(devMomD)}</td><td class="${clsSign(devBudD)}">${fmtMoney(devBudD)}</td><td class="${clsSign(devYoyD)}">${fmtMoney(devYoyD)}</td><td class="gend ${clsSign(devYtdD)}">${fmtMoney(devYtdD)}</td>
-    <td class="${clsSign(devMomP)}">${fmtDevPct(devMomP,cur,prev)}</td><td class="${clsSign(devBudP)}">${fmtDevPct(devBudP,cur,budCur)}</td><td class="${clsSign(devYoyP)}">${fmtDevPct(devYoyP,cur,yoy)}</td><td class="gend ${clsSign(devYtdP)}">${fmtDevPct(devYtdP,ytd,budYtd)}</td>
+    <td class="${clsSign(devYoyD)}">${fmtMoney(devYoyD)}</td><td class="${clsSign(devMomD)}">${fmtMoney(devMomD)}</td><td class="${clsSign(devBudD)}">${fmtMoney(devBudD)}</td><td class="gend ${clsSign(devYtdD)}">${fmtMoney(devYtdD)}</td>
+    <td class="${clsSign(devYoyP)}">${fmtDevPct(devYoyP,cur,yoy)}</td><td class="${clsSign(devMomP)}">${fmtDevPct(devMomP,cur,prev)}</td><td class="${clsSign(devBudP)}">${fmtDevPct(devBudP,cur,budCur)}</td><td class="gend ${clsSign(devYtdP)}">${fmtDevPct(devYtdP,ytd,budYtd)}</td>
   </tr>`;
 }
 function rowLine(label,key){ return rowLineInner(label,key,''); }
@@ -867,8 +878,8 @@ function rowCfDetail(label, key){
     <td class="lbl italic">${label}</td>
     <td class="italic">${fmtMoney(yoy)}</td><td class="italic">${fmtMoney(prev)}</td><td class="cur italic">${fmtMoney(cur)}</td><td class="cur gend italic">${fmtMoney(ytd)}</td>
     <td class="cur italic">${fmtMoney(budCur)}</td><td class="cur gend italic">${fmtMoney(budYtd)}</td>
-    <td class="italic ${clsSign(devMomD)}">${fmtMoney(devMomD)}</td><td class="italic ${clsSign(devBudD)}">${fmtMoney(devBudD)}</td><td class="italic ${clsSign(devYoyD)}">${fmtMoney(devYoyD)}</td><td class="gend italic ${clsSign(devYtdD)}">${fmtMoney(devYtdD)}</td>
-    <td class="italic ${clsSign(devMomP)}">${fmtDevPct(devMomP,cur,prev)}</td><td class="italic ${clsSign(devBudP)}">${fmtDevPct(devBudP,cur,budCur)}</td><td class="italic ${clsSign(devYoyP)}">${fmtDevPct(devYoyP,cur,yoy)}</td><td class="gend italic ${clsSign(devYtdP)}">${fmtDevPct(devYtdP,ytd,budYtd)}</td>
+    <td class="italic ${clsSign(devYoyD)}">${fmtMoney(devYoyD)}</td><td class="italic ${clsSign(devMomD)}">${fmtMoney(devMomD)}</td><td class="italic ${clsSign(devBudD)}">${fmtMoney(devBudD)}</td><td class="gend italic ${clsSign(devYtdD)}">${fmtMoney(devYtdD)}</td>
+    <td class="italic ${clsSign(devYoyP)}">${fmtDevPct(devYoyP,cur,yoy)}</td><td class="italic ${clsSign(devMomP)}">${fmtDevPct(devMomP,cur,prev)}</td><td class="italic ${clsSign(devBudP)}">${fmtDevPct(devBudP,cur,budCur)}</td><td class="gend italic ${clsSign(devYtdP)}">${fmtDevPct(devYtdP,ytd,budYtd)}</td>
   </tr>`;
 }
 function rowCfSpacer(){
@@ -924,8 +935,8 @@ function rowLineInnerCf(label, key, trClass){
     <td class="lbl">${label}</td>
     <td>${fmtMoney(yoy)}</td><td>${fmtMoney(prev)}</td><td class="cur">${fmtMoney(cur)}</td><td class="cur gend">${fmtMoney(ytd)}</td>
     <td class="cur">${fmtMoney(budCur)}</td><td class="cur gend">${fmtMoney(budYtd)}</td>
-    <td class="${clsSign(devMomD)}">${fmtMoney(devMomD)}</td><td class="${clsSign(devBudD)}">${fmtMoney(devBudD)}</td><td class="${clsSign(devYoyD)}">${fmtMoney(devYoyD)}</td><td class="gend ${clsSign(devYtdD)}">${fmtMoney(devYtdD)}</td>
-    <td class="${clsSign(devMomP)}">${fmtDevPct(devMomP,cur,prev)}</td><td class="${clsSign(devBudP)}">${fmtDevPct(devBudP,cur,budCur)}</td><td class="${clsSign(devYoyP)}">${fmtDevPct(devYoyP,cur,yoy)}</td><td class="gend ${clsSign(devYtdP)}">${fmtDevPct(devYtdP,ytd,budYtd)}</td>
+    <td class="${clsSign(devYoyD)}">${fmtMoney(devYoyD)}</td><td class="${clsSign(devMomD)}">${fmtMoney(devMomD)}</td><td class="${clsSign(devBudD)}">${fmtMoney(devBudD)}</td><td class="gend ${clsSign(devYtdD)}">${fmtMoney(devYtdD)}</td>
+    <td class="${clsSign(devYoyP)}">${fmtDevPct(devYoyP,cur,yoy)}</td><td class="${clsSign(devMomP)}">${fmtDevPct(devMomP,cur,prev)}</td><td class="${clsSign(devBudP)}">${fmtDevPct(devBudP,cur,budCur)}</td><td class="gend ${clsSign(devYtdP)}">${fmtDevPct(devYtdP,ytd,budYtd)}</td>
   </tr>`;
 }
 

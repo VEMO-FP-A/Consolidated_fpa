@@ -26,6 +26,51 @@
   "2026-12"
  ],
  "last_actual_idx": 19,
+ "report_month": "2026-08",
+ "data_status": [
+  {
+   "label": "Consolidated P&L (Board Outputs)",
+   "month": "2026-08",
+   "state": "ok",
+   "detail": ""
+  },
+  {
+   "label": "VCN dashboard",
+   "month": "2026-08",
+   "state": "ok",
+   "detail": ""
+  },
+  {
+   "label": "LTO dashboard",
+   "month": "2026-08",
+   "state": "ok",
+   "detail": ""
+  },
+  {
+   "label": "DAE dashboard",
+   "month": "2026-08",
+   "state": "ok",
+   "detail": ""
+  },
+  {
+   "label": "EV Fleets dashboard",
+   "month": "2026-08",
+   "state": "ok",
+   "detail": ""
+  },
+  {
+   "label": "Cash Flow (board deck)",
+   "month": "2026-08",
+   "state": "ok",
+   "detail": ""
+  },
+  {
+   "label": "Normalized EBITDA Bridge",
+   "month": "2026-08",
+   "state": "ok",
+   "detail": ""
+  }
+ ],
  "generated_month": "2026-08",
  "generated_month_label": "August 2026",
  "companies": {

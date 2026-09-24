@@ -8,6 +8,13 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-DQ6Y3XVTMD"></script>
+<script>
+window.dataLayer=window.dataLayer||[];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config','G-DQ6Y3XVTMD');
+</script>
 <style>
 :root{
   --forest:#1F5454;--teal:#11ABAB;--teal-deep:#168888;--mint:#7BDADA;
@@ -1083,6 +1090,44 @@ document.addEventListener('DOMContentLoaded', ()=>{
   });
 });
 
+</script>
+
+<script>
+/* Uso del tablero (GA4). Solo viajan etiquetas de seccion y el mes; ninguna cifra. */
+(function(){
+  var SECTIONS=[['#companies','Operational KPIs'],['#plBridgeGrid','Board P&L KPIs'],
+                ['#ebitdaBridgeWrap','EBITDA Bridge'],['#reconTable','Consolidated P&L'],
+                ['#cashflowWrap','Cash Flow']];
+  function ev(n,p){ if(typeof gtag==='function'){ try{ gtag('event',n,p||{}); }catch(e){} } }
+  function month(){ try{ return DATA.report_month||''; }catch(e){ return ''; } }
+  function track(){
+    if(typeof gtag!=='function'||typeof IntersectionObserver==='undefined') return;
+    var seen={}, m=month();
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(!e.isIntersecting) return;
+        var n=e.target.getAttribute('data-ga-section');
+        if(!n||seen[n]) return;
+        seen[n]=1; ev('section_view',{section_name:n, report_month:m});
+      });
+    },{threshold:0, rootMargin:'-25% 0px -25% 0px'});
+    function watch(el,n){ if(el){ el.setAttribute('data-ga-section',n); io.observe(el); } }
+    SECTIONS.forEach(function(p){ watch(document.querySelector(p[0]), p[1]); });
+    try{ Object.keys(DATA.companies||{}).forEach(function(ck){
+      watch(document.getElementById('block-'+ck), DATA.companies[ck].name+' KPIs'); }); }catch(e){}
+  }
+  function go(){ ev('dashboard_open',{report_month:month()}); track(); }
+  function start(){
+    if(typeof gtag!=='function') return;
+    if(!document.getElementById('access-gate')){ go(); return; }
+    var t=setInterval(function(){
+      if(!document.getElementById('access-gate')){ clearInterval(t); go(); }
+    },400);
+    setTimeout(function(){ clearInterval(t); }, 15*60*1000);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(start,300); });
+  else setTimeout(start,300);
+})();
 </script>
 </body>
 </html>
